@@ -8,6 +8,6 @@ case "send":
     signal(SIGPIPE, SIG_IGN)  // osascript dying before it reads its script must not kill us
     exit(SendCommand.run(Array(CommandLine.arguments.dropFirst(2))))
 default:
-    FileHandle.standardError.write(Data("usage: ClaudeRelay hook | send <session-id> <text>\n".utf8))
-    exit(1)
+    signal(SIGPIPE, SIG_IGN)
+    RelayApp.main()
 }
