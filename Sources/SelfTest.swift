@@ -66,6 +66,20 @@ enum SelfTest {
         old.updatedAt = Date().timeIntervalSince1970 + 10
         check("marker older than the last hook event is ignored", !old.interrupted)
 
+        func rollout(_ originator: String) -> String {
+            let url = dir.appendingPathComponent(UUID().uuidString + ".jsonl")
+            try? #"{"type":"session_meta","payload":{"originator":"\#(originator)"}}"#.appending("\n").write(to: url, atomically: true, encoding: .utf8)
+            return url.path
+        }
+        check("Codex TUI rollout counts as interactive", Codex.interactive(rollout("codex-tui")))
+        check("codex exec rollout is skipped", !Codex.interactive(rollout("codex_exec")))
+        check("missing rollout counts as interactive", Codex.interactive(nil))
+        check("Amp thread id accepted", Inbox.validThread("T-01a18a06-d728-70de-8d1e-8cc150b0f6fc"))
+        check("path-like Amp thread id rejected", !Inbox.validThread("T-../../etc"))
+        let tab = "64017D0C-B0FE-457C-A404-FFB5514233B0"
+        check("Claude rows key by tab", Session(sessionId: "c", agent: "claude", cwd: "/", status: "idle", updatedAt: 0, itermSessionId: tab).rowKey == tab)
+        check("Amp rows key by thread", Session(sessionId: "T-x", agent: "amp", cwd: "/", status: "idle", updatedAt: 0, itermSessionId: tab).rowKey == "T-x")
+
         print(fails == 0 ? "selftest passed" : "\(fails) selftest check(s) failed")
         return fails == 0 ? 0 : 1
     }

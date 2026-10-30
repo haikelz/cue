@@ -1,5 +1,5 @@
 #!/bin/zsh
-# State-machine check for `cue hook`. Runs against a temp CUE_DIR; touches nothing else.
+# State-machine and delivery checks for `cue`. Runs against a temp CUE_DIR; touches nothing else.
 set -u
 zmodload zsh/datetime
 cd "${0:A:h}/.."
@@ -11,7 +11,7 @@ ID=0a1b2c3d-0000-4000-8000-000000000001
 
 "$BIN" selftest | grep -v "^ok" || fails=$((fails+1))
 
-hook() { print -r -- "$1" | "$BIN" hook; }
+hook() { print -r -- "$1" | "$BIN" hook claude; }
 ev() { hook "{\"hook_event_name\":\"$1\",\"session_id\":\"${3:-$ID}\",\"cwd\":\"/tmp/demo-project\",\"transcript_path\":\"/tmp/none.jsonl\"${2:+,$2}}"; }
 field() { jq -r ".$1" "$CUE_DIR/sessions/${2:-$ID}.json" 2>/dev/null; }
 check() { if [[ "$2" == "$3" ]]; then print "ok    $1"; else print "FAIL  $1: got '$2', want '$3'"; fails=$((fails+1)); fi; }
@@ -97,6 +97,103 @@ for i in {1..100}; do ev PostToolUse '"tool_name":"Read"' $P; done
 avg=$(( (EPOCHREALTIME - start) * 10 ))  # ms per run
 printf "      hook average: %.1f ms\n" $avg
 check "hook averages under 50 ms" "$(( avg < 50 ))" 1
+
+print "      -- codex"
+X=01a18a05-536c-77d0-b9bb-3f3117bb510b
+tui=$CUE_DIR/tui.jsonl; print '{"type":"session_meta","payload":{"originator":"codex-tui"}}' > $tui
+cx() { print -r -- "{\"hook_event_name\":\"$1\",\"session_id\":\"${3:-$X}\",\"cwd\":\"/tmp/codex-project\",\"transcript_path\":\"${4:-$tui}\"${2:+,$2}}" | "$BIN" hook codex; }
+out=$(cx SessionStart '"source":"startup"')
+check "Codex SessionStart registers idle" "$(field status $X)" idle
+check "Codex row is tagged codex" "$(field agent $X)" codex
+check "Codex hooks always print JSON" "$out" "{}"
+check "Codex row records no tab" "$(field iterm_session_id $X)" null
+cx UserPromptSubmit '"turn_id":"turn-1","prompt":"hi"' > /dev/null
+check "Codex UserPromptSubmit -> working" "$(field status $X)" working
+check "Codex turn recorded" "$(field turn_id $X)" turn-1
+cx PermissionRequest '"turn_id":"turn-1","tool_name":"Bash"' > /dev/null
+check "Codex PermissionRequest -> needs_you" "$(field status $X)" needs_you
+cx PostToolUse '"turn_id":"turn-1","tool_name":"Bash"' > /dev/null
+check "Codex PostToolUse -> working" "$(field status $X)" working
+out=$(cx Stop '"turn_id":"turn-1","last_assistant_message":"Done here."')
+check "Codex Stop -> idle" "$(field status $X)" idle
+check "Codex Stop stores the reply" "$(field last_message $X)" "Done here."
+check "Codex Stop prints {}" "$out" "{}"
+cx PostToolUse '"turn_id":"turn-0","tool_name":"Read"' > /dev/null
+check "subagent event from another turn ignored" "$(field status $X)" idle
+cx UserPromptSubmit '"turn_id":"turn-2","prompt":"again"' > /dev/null
+cx Interrupt '"turn_id":"turn-1"' > /dev/null
+check "a late Interrupt from an earlier turn is ignored" "$(field status $X)" working
+cx Interrupt '"turn_id":"turn-2"' > /dev/null
+check "Codex Interrupt -> idle" "$(field status $X)" idle
+E=01a18a05-0000-7000-8000-00000000e8ec; ex=$CUE_DIR/exec.jsonl
+print '{"type":"session_meta","payload":{"originator":"codex_exec"}}' > $ex
+cx SessionStart '"source":"startup"' $E $ex > /dev/null
+check "codex exec sessions are skipped" "$([[ -e $CUE_DIR/sessions/$E.json ]] && print row || print none)" none
+check "a codex exec run leaves the TUI row alone" "$(field status $X)" idle
+out=$(print -r -- 'garbage' | "$BIN" hook codex)
+check "Codex malformed input still prints {}" "$out" "{}"
+
+print "      -- codex delivery"
+fake=$CUE_DIR/fake-codex; print -r -- '#!/bin/sh
+printf "%s\n" "$@" > "$CUE_DIR/codex-args"; echo "PATH=$PATH" >> "$CUE_DIR/codex-args"' > $fake; chmod +x $fake
+print -r -- "{\"codex\":\"$fake\",\"path\":\"/opt/test/bin:/usr/bin:/bin\"}" > $CUE_DIR/config.json
+out=$(CUE_DIR=$CUE_DIR "$BIN" send $X '- starts with a dash' 2>&1)
+check "send to idle Codex reports sent" "$out" sent
+check "send to idle Codex runs codex queue" "$(sed -n 1p $CUE_DIR/codex-args)" queue
+check "thread passed with =" "$(sed -n 2p $CUE_DIR/codex-args)" "--thread=$X"
+check "message passed with =, dash intact" "$(sed -n 3p $CUE_DIR/codex-args)" "--message=- starts with a dash"
+check "codex runs with the install-time PATH" "$(sed -n 4p $CUE_DIR/codex-args)" "PATH=/opt/test/bin:/usr/bin:/bin"
+cx UserPromptSubmit '"turn_id":"turn-3","prompt":"busy"' > /dev/null
+check "send to working Codex is queued" "$("$BIN" send $X 'next task' 2>&1)" queued
+rm $CUE_DIR/config.json
+check "send without a codex path refuses" "$("$BIN" send $X 'x' 2>&1)" "Cue doesn't know where codex is; run install.sh again"
+cx SessionEnd > /dev/null
+check "Codex SessionEnd deletes the row" "$([[ -e $CUE_DIR/sessions/$X.json ]] && print row || print none)" none
+O=01a18a05-0000-7000-8000-0000000000c1
+cx SessionStart '"source":"startup"' $O > /dev/null
+cx SessionStart '"source":"startup"' 01a18a05-0000-7000-8000-0000000000c2 > /dev/null
+check "a new Codex session in the same folder retires the old idle row" "$([[ -e $CUE_DIR/sessions/$O.json ]] && print row || print none)" none
+
+print "      -- amp inbox"
+A=T-01a18a06-d728-70de-8d1e-8cc150b0f6fc
+amp_row() { print -r -- "{\"session_id\":\"$A\",\"agent\":\"amp\",\"cwd\":\"/tmp/amp-project\",\"status\":\"$1\",\"updated_at\":0,\"heartbeat\":$2}" > $CUE_DIR/sessions/$A.json; }
+drain() {  # plays the plugin's part: the real drainInbox from plugins/amp/cue.ts
+  CUE_DIR=$CUE_DIR node --no-warnings -e "
+    import('$PWD/plugins/amp/cue.ts').then(async ({ drainInbox }) => {
+      for (let i = 0; i < 40; i++) {
+        await drainInbox('$CUE_DIR/inbox/$A', async (c) => { require('fs').appendFileSync('$CUE_DIR/amp-got', c + '\n') })
+        await new Promise(r => setTimeout(r, 100))
+      }
+    })"
+}
+amp_row idle $EPOCHREALTIME
+drain & out=$("$BIN" send $A 'hello amp' 2>&1); wait
+check "Amp send is delivered through the inbox" "$out" delivered
+check "the plugin got the prompt once" "$(cat $CUE_DIR/amp-got)" "hello amp"
+check "no inbox leftovers" "$(ls -A $CUE_DIR/inbox/$A | grep -v receipts | wc -l | tr -d ' ')" 0
+amp_row working $EPOCHREALTIME
+drain & drain & out=$("$BIN" send $A 'only once' 2>&1); wait
+check "two Amp processes, one delivery" "$(grep -c 'only once' $CUE_DIR/amp-got)" 1
+out=$("$BIN" send $A 'nobody home' 2>&1)
+check "unclaimed prompt is withdrawn" "$out" "Amp didn't pick it up"
+check "withdrawn prompt left nothing behind" "$(ls -A $CUE_DIR/inbox/$A | grep -v receipts | wc -l | tr -d ' ')" 0
+amp_row idle $EPOCHREALTIME
+check "a prompt over 60 KB is refused" "$("$BIN" send $A "$(printf 'x%.0s' {1..61000})" 2>&1)" "Prompt is too long for Amp (60 KB at most)"
+mkdir -p $CUE_DIR/inbox/$A; old=$CUE_DIR/inbox/$A/0a1b2c3d-0000-4000-8000-0000000000cc.json
+print '{"content":"orphan"}' > $old; chmod 600 $old; touch -t 202001010000 $old
+: > $CUE_DIR/amp-got; drain
+check "an orphaned prompt is dropped, never sent late" "$(wc -c < $CUE_DIR/amp-got | tr -d ' ')$([[ -e $old ]] && print ' still there')" 0
+amp_row idle $(( EPOCHREALTIME - 60 ))
+check "stale heartbeat refuses the send" "$("$BIN" send $A 'x' 2>&1)" "Amp isn't answering; is the thread still open?"
+mkdir -p $CUE_DIR/inbox/$A; print '{"content":"evil"}' > $CUE_DIR/inbox/$A/0a1b2c3d-0000-4000-8000-0000000000aa.json; chmod 644 $CUE_DIR/inbox/$A/*.json
+ln -s /etc/hosts $CUE_DIR/inbox/$A/0a1b2c3d-0000-4000-8000-0000000000bb.json
+: > $CUE_DIR/amp-got; drain
+check "plugin skips wrong-mode files and symlinks" "$(wc -c < $CUE_DIR/amp-got | tr -d ' ')" 0
+
+print "      -- amp plugin, fake API"
+rm -rf $CUE_DIR/sessions/* $CUE_DIR/inbox
+CUE_DIR=$CUE_DIR node --no-warnings tests/amp-plugin.mjs $PWD/plugins/amp/cue.ts $BIN \
+  T-0a1b2c3d-0000-4000-8000-00000000000a T-0a1b2c3d-0000-4000-8000-00000000000b || fails=$((fails+1))
 
 print; (( fails == 0 )) && print "all checks passed" || print "$fails check(s) failed"
 exit $(( fails > 0 ))

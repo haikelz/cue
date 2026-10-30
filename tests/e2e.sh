@@ -1,7 +1,10 @@
 #!/bin/zsh
-# End-to-end: two real Claude Code sessions in new iTerm2 windows, prompts sent through
-# `cue send`. Costs a few small model calls. Needs iTerm2, claude and jq.
+# End-to-end: real Claude Code, Amp and Codex sessions in new iTerm2 windows, prompts sent through
+# `cue send`. Costs a few small model calls. Needs iTerm2, claude and jq; Amp and Codex parts run
+# when ./install.sh has wired them in (Codex also needs Cue's hooks trusted in /hooks).
 set -u
+setopt null_glob
+zmodload zsh/datetime
 cd "${0:A:h}/.."
 BIN=$PWD/.build/release/cue
 T=$PWD/tests/iterm.sh
@@ -14,7 +17,7 @@ field() { jq -r ".$2" "$SESSIONS/$1.json" 2>/dev/null; }
 wait_for() {  # wait_for <seconds> <zsh condition>
   for i in {1..$(( $1 * 2 ))}; do eval "$2" && return 0; sleep 0.5; done; return 1
 }
-session_of() { jq -r --arg s "$1" 'select(.iterm_session_id == $s) | .session_id' $SESSIONS/*.json 2>/dev/null | head -1; }
+session_of() { jq -r --arg s "$1" --arg a "${2:-claude}" 'select(.iterm_session_id == $s and .agent == $a) | .session_id' $SESSIONS/*.json 2>/dev/null | head -1; }
 
 # Start claude in a fresh window, clearing first-run prompts (folder trust, MCP servers).
 start() {  # start <dir> <extra flags> -> prints "<iterm id> <session id>"
@@ -33,7 +36,7 @@ start() {  # start <dir> <extra flags> -> prints "<iterm id> <session id>"
 }
 
 rm -rf $W && mkdir -p $W/one $W/two
-jq -n --arg b "$BIN" '{hooks: (([ "SessionStart","UserPromptSubmit","PostToolUse","PostToolUseFailure","PermissionRequest","Elicitation","ElicitationResult","Stop","StopFailure","SessionEnd" ] | map({key: ., value: [{hooks: [{type: "command", command: $b, args: ["hook"], timeout: 5}]}]}) | from_entries) + {Notification: [{matcher: "idle_prompt", hooks: [{type: "command", command: $b, args: ["hook"], timeout: 5}]}]})}' > $W/settings.json
+jq -n --arg b "$BIN" '{hooks: (([ "SessionStart","UserPromptSubmit","PostToolUse","PostToolUseFailure","PermissionRequest","Elicitation","ElicitationResult","Stop","StopFailure","SessionEnd" ] | map({key: ., value: [{hooks: [{type: "command", command: $b, args: ["hook", "claude"], timeout: 5}]}]}) | from_entries) + {Notification: [{matcher: "idle_prompt", hooks: [{type: "command", command: $b, args: ["hook", "claude"], timeout: 5}]}]})}' > $W/settings.json
 
 read sidA A <<< "$(start $W/one '')"
 read sidB B <<< "$(start $W/two '--permission-mode default')"
@@ -96,5 +99,79 @@ check "send to closed tab refused" "$([[ $out == "Claude process is gone" || $ou
 
 $T close $sidB > /dev/null
 rm -f $SESSIONS/$A.json $SESSIONS/$B.json
+
+# 7. Amp: the plugin lists the thread you have open and delivers through the inbox.
+if command -v amp > /dev/null && cmp -s plugins/amp/cue.ts ~/.config/amp/plugins/cue.ts; then
+  mkdir -p $W/amp
+  sidM=$($T new); sleep 1
+  $T type $sidM "cd $W/amp && amp" > /dev/null; $T key $sidM 13 > /dev/null; sleep 10
+  $T type $sidM 'Reply with the single word READY and nothing else' > /dev/null; sleep 0.2; $T key $sidM 13 > /dev/null
+  wait_for 60 '[[ -n $(session_of $sidM amp) ]]'
+  M=$(session_of $sidM amp)
+  check "Amp thread registered" "$([[ -n $M ]] && print yes)" yes
+  if [[ -n $M ]]; then
+    wait_for 60 '[[ $(field $M last_message) == READY ]]'
+    check "Amp reply stored" "$(field $M last_message)" READY
+    check "Amp send delivered" "$($BIN send $M 'Reply with the single word AMPED and nothing else')" delivered
+    wait_for 60 '[[ $(field $M last_message) == AMPED ]]'
+    check "Amp answered the sent prompt" "$(field $M last_message)" AMPED
+    $BIN send $M 'Write the numbers 1 to 60, one per line, and nothing else' > /dev/null
+    wait_for 30 '[[ $(field $M status) == working ]]'
+    check "Amp send while working delivered" "$($BIN send $M 'Then reply with the single word QUEUED and nothing else')" delivered
+    wait_for 120 '[[ $(field $M last_message) == QUEUED ]]'
+    check "the queued prompt ran" "$(field $M last_message)" QUEUED
+    $T key $sidM 3 > /dev/null; sleep 0.5; $T key $sidM 3 > /dev/null; sleep 1; $T close $sidM > /dev/null
+    wait_for 40 '(( EPOCHREALTIME - $(field $M heartbeat) > 30 ))' 2> /dev/null
+    check "closed Amp window stops the heartbeat" "$(( EPOCHREALTIME - $(field $M heartbeat 2>/dev/null || print 0) > 30 ))" 1
+  else
+    $T close $sidM > /dev/null
+  fi
+else
+  print "skip  Amp: install amp and run ./install.sh"
+fi
+
+# 8. Codex: hooks list the session, `codex queue` delivers.
+if grep -q "Cue.app/Contents/MacOS/cue' hook codex" ~/.codex/hooks.json 2> /dev/null; then
+  mkdir -p $W/codex
+  sidC=$($T new); sleep 1
+  $T type $sidC "cd $W/codex && codex" > /dev/null; $T key $sidC 13 > /dev/null
+  trusted=yes
+  for i in {1..40}; do
+    screen=$($T screen $sidC)
+    if [[ $screen == *"Update available"* ]]; then $T key $sidC 27 > /dev/null
+    elif [[ $screen == *"Trust this folder"* ]]; then $T key $sidC 13 > /dev/null
+    elif [[ $screen == *"Hooks need review"* || $screen == *"/hooks"* ]]; then trusted=no; break
+    elif [[ $screen == *"Ask Codex to do anything"* ]]; then
+      sleep 3  # Codex draws its main screen first and the hooks review dialog a moment later
+      [[ $($T screen $sidC) == *"Hooks need review"* ]] && trusted=no
+      break
+    fi
+    sleep 0.5
+  done
+  if [[ $trusted == yes ]]; then
+    $T type $sidC 'Reply with the single word READY and nothing else' > /dev/null; sleep 0.2; $T key $sidC 13 > /dev/null
+    codex_row() { jq -r --arg d "$W/codex" 'select(.agent == "codex" and .cwd == $d) | .session_id' $SESSIONS/*.json 2>/dev/null | head -1; }
+    wait_for 60 '[[ -n $(codex_row) ]]'
+    C=$(codex_row)
+    check "Codex session registered" "$([[ -n $C ]] && print yes)" yes
+    if [[ -n $C ]]; then
+      wait_for 60 '[[ $(field $C last_message) == READY ]]'
+      check "Codex reply stored" "$(field $C last_message)" READY
+      check "Codex send accepted" "$($BIN send $C 'Reply with the single word CODEXED and nothing else')" sent
+      wait_for 60 '[[ $(field $C last_message) == CODEXED ]]'
+      check "Codex answered the sent prompt" "$(field $C last_message)" CODEXED
+      $BIN send $C 'Write the numbers 1 to 60, one per line, and nothing else' > /dev/null
+      wait_for 30 '[[ $(field $C status) == working ]]'
+      check "Codex send while working is queued" "$($BIN send $C 'Then reply with the single word QUEUED and nothing else')" queued
+      wait_for 120 '[[ $(field $C last_message) == QUEUED ]]'
+      check "the queued prompt ran" "$(field $C last_message)" QUEUED
+    fi
+  else
+    print "skip  Codex: trust Cue's hooks in Codex's /hooks first"
+  fi
+  $T key $sidC 3 > /dev/null; sleep 0.5; $T key $sidC 3 > /dev/null; sleep 1; $T close $sidC > /dev/null
+else
+  print "skip  Codex: run ./install.sh"
+fi
 print; (( fails == 0 )) && print "all checks passed" || print "$fails check(s) failed"
 exit $(( fails > 0 ))
