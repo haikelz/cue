@@ -129,6 +129,8 @@ E=01a18a05-0000-7000-8000-00000000e8ec; ex=$CUE_DIR/exec.jsonl
 print '{"type":"session_meta","payload":{"originator":"codex_exec"}}' > $ex
 cx SessionStart '"source":"startup"' $E $ex > /dev/null
 check "codex exec sessions are skipped" "$([[ -e $CUE_DIR/sessions/$E.json ]] && print row || print none)" none
+print -r -- "{\"hook_event_name\":\"UserPromptSubmit\",\"session_id\":\"01a18a05-0000-7000-8000-00000000bead\",\"cwd\":\"/tmp/memories\",\"transcript_path\":null,\"turn_id\":\"t\"}" | "$BIN" hook codex > /dev/null
+check "Codex background sessions without a rollout are skipped" "$([[ -e $CUE_DIR/sessions/01a18a05-0000-7000-8000-00000000bead.json ]] && print row || print none)" none
 check "a codex exec run leaves the TUI row alone" "$(field status $X)" idle
 out=$(print -r -- 'garbage' | "$BIN" hook codex)
 check "Codex malformed input still prints {}" "$out" "{}"

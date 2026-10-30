@@ -73,7 +73,8 @@ enum SelfTest {
         }
         check("Codex TUI rollout counts as interactive", Codex.interactive(rollout("codex-tui")))
         check("codex exec rollout is skipped", !Codex.interactive(rollout("codex_exec")))
-        check("missing rollout counts as interactive", Codex.interactive(nil))
+        check("a session without a rollout is skipped", !Codex.interactive(nil))
+        check("a rollout not written yet counts as interactive", Codex.interactive(dir.appendingPathComponent("later.jsonl").path))
         check("Amp thread id accepted", Inbox.validThread("T-01a18a06-d728-70de-8d1e-8cc150b0f6fc"))
         check("path-like Amp thread id rejected", !Inbox.validThread("T-../../etc"))
         let tab = "64017D0C-B0FE-457C-A404-FFB5514233B0"

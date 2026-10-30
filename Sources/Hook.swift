@@ -125,10 +125,12 @@ enum Hook {
 enum HookError: Error { case badInput, unknownAgent }
 
 enum Codex {
-    /// Codex also fires hooks for `codex exec` and other clients. A rollout's first line names its
-    /// originator; rows are for the interactive TUI. Unknown (no rollout yet) counts as interactive.
+    /// Codex also fires hooks for `codex exec`, other clients, and its own background sessions (memory
+    /// upkeep, for one), which have no rollout at all. A rollout's first line names its originator; rows
+    /// are for the interactive TUI. A rollout path whose file isn't written yet counts as interactive.
     static func interactive(_ rollout: String?) -> Bool {
-        guard let rollout, let h = FileHandle(forReadingAtPath: rollout) else { return true }
+        guard let rollout else { return false }
+        guard let h = FileHandle(forReadingAtPath: rollout) else { return true }
         defer { try? h.close() }
         guard let line = h.readData(ofLength: 65_536).split(separator: UInt8(ascii: "\n")).first,
               let entry = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any],
