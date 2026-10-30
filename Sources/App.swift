@@ -23,13 +23,18 @@ final class Model: ObservableObject {
     @Published private(set) var busy: Set<String> = []
     @Published private(set) var hooksInstalled = false
     @Published private(set) var order: [String] = []
-    private var pending: [String: (sessionId: String, at: Double, deadline: Double, text: String)] = [:]
+    private var pending: [String: Pending] = [:]
     private var probing: Set<String> = []
     private var timer: Timer?
-    /// osascript calls block, so they run one at a time here, off the main thread and off Swift's task pool.
-    private let worker = DispatchQueue(label: "cue.osascript")
+    /// osascript and codex calls block, so they run one at a time here, off the main thread and off Swift's task pool.
+    private let worker = DispatchQueue(label: "cue.worker")
 
-    var waiting: Int { sessions.filter { $0.status != "working" && $0.itermSessionId != nil }.count }
+    /// A sent Claude prompt waiting for `last_prompt_at` to prove it arrived.
+    private struct Pending {
+        let sessionId: String, at: Double, deadline: Double, text: String
+    }
+
+    var waiting: Int { sessions.filter { $0.status != "working" && $0.deliverable }.count }
 
     /// Sorted once per popover open, so a row never moves under your cursor.
     var rows: [Session] {
@@ -48,12 +53,12 @@ final class Model: ObservableObject {
         var live: [Session] = []
         for var s in Store.all() {
             if !Self.alive(s) {
-                // Claude exited without SessionEnd (tab closed, crash). Re-check under the lock, so a
-                // resumed session that just rewrote this file keeps it.
+                // Claude exited without SessionEnd (tab closed, crash), or a session went quiet for good.
+                // Re-check under the lock, so a resumed session that just rewrote this file keeps it.
                 _ = try? Store.locked { if let fresh = Store.read(s.sessionId), !Self.alive(fresh) { Store.delete(s.sessionId) } }
                 continue
             }
-            if s.status != "idle", s.interrupted { s = setIdle(s) { $0.status != "idle" && $0.interrupted } }
+            if s.isClaude, s.status != "idle", s.interrupted { s = setIdle(s) { $0.status != "idle" && $0.interrupted } }
             live.append(s)
         }
         if live != sessions { sessions = live }
@@ -61,8 +66,16 @@ final class Model: ObservableObject {
     }
 
     static func alive(_ s: Session) -> Bool {
-        guard let pid = s.claudePid, let start = s.claudeStart else { return true }  // PID unknown: keep until SessionEnd
-        return Proc(pid).map { abs($0.start - start) < 0.01 } ?? false
+        let now = Date().timeIntervalSince1970
+        switch s.agent {
+        case "codex":
+            // Codex sends SessionEnd once a thread sits unopened for 30 minutes. A day without any
+            // change covers a SessionEnd lost to a crash or reboot.
+            return now - max(s.updatedAt, s.transcriptModified ?? 0) < 86_400
+        default:
+            guard let pid = s.pid, let start = s.pidStart else { return true }  // PID unknown: keep until SessionEnd
+            return Proc(pid).map { abs($0.start - start) < 0.01 } ?? false
+        }
     }
 
     /// Runs when the popover opens.
@@ -80,7 +93,7 @@ final class Model: ObservableObject {
     /// A row quiet at working for 15 s gets one look at its screen.
     private func recheckStale() {
         let now = Date().timeIntervalSince1970
-        for s in sessions where s.status == "working" && !probing.contains(s.sessionId)
+        for s in sessions where s.isClaude && s.deliverable && s.status == "working" && !probing.contains(s.sessionId)
             && now - max(s.updatedAt, s.transcriptModified ?? 0) > 15 {
             probing.insert(s.sessionId)
             worker.async {
@@ -96,7 +109,8 @@ final class Model: ObservableObject {
     }
 
     func name(_ s: Session) -> String {
-        sessions.filter { $0.project == s.project }.count > 1 ? "\(s.project) · \(s.sessionId.prefix(4))" : s.project
+        let clash = sessions.filter { $0.project == s.project && $0.agent == s.agent }.count > 1
+        return "\(s.agentName) · \(s.project)" + (clash ? " · \(s.sessionId.prefix(s.agent == "amp" ? 6 : 4))" : "")
     }
 
     func send(_ s: Session) {
@@ -134,8 +148,12 @@ final class Model: ObservableObject {
                 notes[key] = "Sent"
             } else {
                 // The 5 s wait starts once typing ends; a long prompt takes seconds to type.
-                pending[key] = (s.sessionId, at, Date().timeIntervalSince1970 + 5, text)
+                pending[key] = Pending(sessionId: s.sessionId, at: at, deadline: Date().timeIntervalSince1970 + 5, text: text)
             }
+        case .accepted(let note):
+            busy.remove(key)
+            drafts[key] = ""
+            notes[key] = note
         }
     }
 
@@ -174,10 +192,13 @@ final class Model: ObservableObject {
         NSPasteboard.general.setString(text, forType: .string)
     }
 
+    /// True when any agent is wired to this app: Claude Code or Codex hooks.
     static func hooksPresent() -> Bool {
-        let settings = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/settings.json")
-        guard let exe = Bundle.main.executablePath, let text = try? String(contentsOf: settings, encoding: .utf8) else { return false }
-        return text.contains(exe)
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        guard let exe = Bundle.main.executablePath else { return false }
+        return [".claude/settings.json", ".codex/hooks.json"].contains {
+            (try? String(contentsOf: home.appendingPathComponent($0), encoding: .utf8))?.contains(exe) == true
+        }
     }
 }
 
@@ -188,10 +209,10 @@ struct PopoverView: View {
         VStack(alignment: .leading, spacing: 0) {
             if model.sessions.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("No Claude Code sessions yet").font(.headline)
+                    Text("No agent sessions yet").font(.headline)
                     Text(model.hooksInstalled
-                         ? "A session appears after its next prompt or reply."
-                         : "Hooks are missing from ~/.claude/settings.json. Run ./install.sh in the cue folder.")
+                         ? "A Claude Code or Codex session appears after its next prompt or reply."
+                         : "No agent is wired to Cue yet. Run ./install.sh in the cue folder.")
                         .font(.callout).foregroundStyle(.secondary)
                 }
                 .padding(16)
@@ -233,10 +254,12 @@ struct RowView: View {
 
     var body: some View {
         let key = session.rowKey
-        let target = session.itermSessionId != nil
-        let canType = target && session.status != "needs_you" && !model.busy.contains(key)
+        let target = session.deliverable
+        // Codex holds a prompt until the running turn ends; typing into Claude's tab needs it idle.
+        let queues = !session.isClaude
+        let canType = target && !model.busy.contains(key) && (queues || session.status != "needs_you")
         let draft = Binding(get: { model.drafts[key, default: ""] }, set: { model.drafts[key] = $0 })
-        let canSend = canType && session.status == "idle" && !Delivery.sanitize(draft.wrappedValue).isEmpty
+        let canSend = canType && (queues || session.status == "idle") && !Delivery.sanitize(draft.wrappedValue).isEmpty
 
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
@@ -255,7 +278,9 @@ struct RowView: View {
                     .disabled(!canType)
                     .onSubmit { if canSend { model.send(session) } }
                 Button("Send") { model.send(session) }.disabled(!canSend)
-                Button("Open") { model.open(session) }.disabled(!target)
+                if session.agent != "codex" {  // Codex hooks run in its daemon, so the tab is unknown
+                    Button("Open") { model.open(session) }.disabled(session.itermSessionId == nil)
+                }
             }
             if let note = model.notes[key] {
                 Text(note).font(.callout).foregroundStyle(.secondary)
@@ -265,7 +290,9 @@ struct RowView: View {
     }
 
     private func placeholder(_ target: Bool) -> String {
-        !target ? "Not in iTerm2" : session.status == "needs_you" ? "Answer in terminal" : "Next prompt"
+        if !target { return "Not in iTerm2" }
+        if session.isClaude { return session.status == "needs_you" ? "Answer in terminal" : "Next prompt" }
+        return session.status == "idle" ? "Next prompt" : "Queue a prompt"
     }
 }
 

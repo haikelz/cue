@@ -54,8 +54,8 @@ enum SelfTest {
         func transcript(_ lines: [String]) -> Session {
             let url = dir.appendingPathComponent(UUID().uuidString + ".jsonl")
             try? (lines.joined(separator: "\n") + "\n").write(to: url, atomically: true, encoding: .utf8)
-            return Session(sessionId: "t", cwd: "/tmp", status: "working", updatedAt: Date().timeIntervalSince1970 - 10,
-                           transcriptPath: url.path)
+            return Session(sessionId: "t", agent: "claude", cwd: "/tmp", status: "working",
+                           updatedAt: Date().timeIntervalSince1970 - 10, transcriptPath: url.path)
         }
         let marker = #"{"type":"user","message":{"content":[{"type":"text","text":"[Request interrupted by user for tool use]"}]}}"#
         let meta = #"{"type":"permission-mode","permissionMode":"default"}"#

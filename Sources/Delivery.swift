@@ -1,17 +1,46 @@
 import Foundation
 
 enum Outcome {
-    case sent(at: Double)
-    case refused(String)  // a check failed before any typing
-    case failed(String)   // typing may have started; treat the prompt as at risk
+    case sent(at: Double)  // the turn should start; `last_prompt_at` confirms it
+    case accepted(String)  // the agent took the prompt itself; the note says "Sent" or "Queued"
+    case refused(String)   // a check failed before anything was sent
+    case failed(String)    // sending may have started; treat the prompt as at risk
 }
 
 enum Delivery {
-    /// Types `raw` into the session's iTerm2 tab, then presses Return, each step behind the full set of checks.
+    /// Sends `raw` to a session through its agent's channel.
     static func send(sessionId: String, text raw: String) -> Outcome {
         let text = sanitize(raw)
         guard !text.isEmpty else { return .refused("Prompt is empty") }
         guard let s = Store.read(sessionId) else { return .refused("Session is gone") }
+        switch s.agent {
+        case "codex": return queueToCodex(s, text)
+        default: return typeIntoClaude(s, text)
+        }
+    }
+
+    /// `codex queue` hands the prompt to Codex's daemon, which runs it now or after the current turn.
+    /// The `=` forms keep a prompt that starts with "-" from parsing as a flag.
+    static func queueToCodex(_ s: Session, _ text: String) -> Outcome {
+        let config = Config.load()
+        guard let codex = config.codex, FileManager.default.isExecutableFile(atPath: codex) else {
+            return .refused("Cue doesn't know where codex is; run install.sh again")
+        }
+        guard s.sessionId.range(of: #"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"#, options: .regularExpression) != nil else {
+            return .refused("Not a Codex session id")
+        }
+        var env = ProcessInfo.processInfo.environment
+        if let path = config.path { env["PATH"] = path }
+        switch run(codex, ["queue", "--thread=\(s.sessionId)", "--message=\(text)"], env: env, timeout: 30) {
+        // Exit 0 means Codex accepted the prompt. Waiting for UserPromptSubmit on top of that could only
+        // turn a slow start into "Not confirmed" and invite a second, duplicate send.
+        case .success: return .accepted(s.status == "idle" ? "Sent" : "Queued")
+        case .failure(let e): return .failed("codex queue: \(e.message)")
+        }
+    }
+
+    /// Types the prompt into the session's iTerm2 tab, then presses Return, each step behind the full set of checks.
+    static func typeIntoClaude(_ s: Session, _ text: String) -> Outcome {
         guard let sid = s.itermSessionId, let tty = s.tty else { return .refused("Not in iTerm2") }
 
         let screen: Screen
@@ -71,7 +100,7 @@ enum Delivery {
     /// Process checks, cheapest first. Returns why typing must not happen, or nil.
     static func gate(_ s: Session) -> String? {
         guard s.status == "idle" else { return s.status == "working" ? "Claude is working" : "Claude needs you in the terminal" }
-        guard let pid = s.claudePid, let p = Proc(pid), let start = s.claudeStart, abs(p.start - start) < 0.01 else {
+        guard let pid = s.pid, let p = Proc(pid), let start = s.pidStart, abs(p.start - start) < 0.01 else {
             return "Claude process is gone"
         }
         guard !p.stopped, p.tpgid == p.pgid else { return "Claude isn't in the foreground (suspended?)" }
@@ -177,26 +206,37 @@ enum Delivery {
     /// Runs AppleScript with arguments in argv, so prompt text never becomes script source.
     /// The long default timeout leaves room for the first-run Automation consent dialog.
     static func osascript(_ script: String, _ args: [String], timeout: Double = 60) -> Result<String, ScriptError> {
+        switch run("/usr/bin/osascript", ["-"] + args, input: script, timeout: timeout) {
+        case .success(let out): return .success(out)
+        case .failure(let e) where e.message.hasPrefix("no answer"): return .failure(ScriptError(message: "iTerm2 didn't answer in \(Int(timeout)) s"))
+        case .failure(let e) where e.message.contains("-1743") || e.message.contains("Not authorized"):
+            return .failure(ScriptError(message: "Allow Cue to control iTerm2 in System Settings > Privacy & Security > Automation"))
+        case .failure(let e): return .failure(e)
+        }
+    }
+
+    /// Runs a program, feeding `input` on stdin, and kills it after `timeout` seconds.
+    static func run(_ exe: String, _ args: [String], input: String? = nil, env: [String: String]? = nil,
+                    timeout: Double) -> Result<String, ScriptError> {
         let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        p.arguments = ["-"] + args
-        let input = Pipe(), output = Pipe(), errors = Pipe()
-        p.standardInput = input
+        p.executableURL = URL(fileURLWithPath: exe)
+        p.arguments = args
+        if let env { p.environment = env }
+        let stdin = Pipe(), output = Pipe(), errors = Pipe()
+        p.standardInput = stdin
         p.standardOutput = output
         p.standardError = errors
-        do { try p.run() } catch { return .failure(ScriptError(message: "osascript: \(error.localizedDescription)")) }
+        do { try p.run() } catch { return .failure(ScriptError(message: "\(exe): \(error.localizedDescription)")) }
         DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { if p.isRunning { p.terminate() } }
-        input.fileHandleForWriting.write(Data(script.utf8))
-        try? input.fileHandleForWriting.close()
+        if let input { stdin.fileHandleForWriting.write(Data(input.utf8)) }
+        try? stdin.fileHandleForWriting.close()
         let out = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
         let err = String(decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
         p.waitUntilExit()
         guard p.terminationStatus == 0 else {
-            if err.contains("-1743") || err.contains("Not authorized") {
-                return .failure(ScriptError(message: "Allow Cue to control iTerm2 in System Settings > Privacy & Security > Automation"))
-            }
-            if p.terminationReason == .uncaughtSignal { return .failure(ScriptError(message: "iTerm2 didn't answer in \(Int(timeout)) s")) }
-            return .failure(ScriptError(message: err.trimmingCharacters(in: .whitespacesAndNewlines)))
+            if p.terminationReason == .uncaughtSignal { return .failure(ScriptError(message: "no answer in \(Int(timeout)) s")) }
+            let first = err.split(whereSeparator: \.isNewline).first.map(String.init) ?? "exit \(p.terminationStatus)"
+            return .failure(ScriptError(message: first))
         }
         return .success(out.trimmingCharacters(in: .newlines))
     }
@@ -268,19 +308,24 @@ enum Delivery {
 /// `cue send <session-id> <text>`: the app's delivery path, for tests and scripts.
 /// Exit 0 = sent and confirmed, 1 = refused or failed, 2 = sent but not confirmed in 5 s.
 enum SendCommand {
+    /// Exit 0 = delivered (or queued behind a running turn), 1 = refused or failed, 2 = sent but not confirmed.
     static func run(_ args: [String]) -> Int32 {
         guard args.count == 2 else {
             FileHandle.standardError.write(Data("usage: cue send <session-id> <text>\n".utf8))
             return 1
         }
-        switch Delivery.send(sessionId: args[0], text: args[1]) {
+        let (id, text) = (args[0], args[1])
+        switch Delivery.send(sessionId: id, text: text) {
         case .refused(let why), .failed(let why):
             FileHandle.standardError.write(Data("\(why)\n".utf8))
             return 1
+        case .accepted(let note):
+            print(note.lowercased())
+            return 0
         case .sent(let at):
-            if Delivery.skipsConfirmation(args[1]) { print("sent"); return 0 }
+            if Delivery.skipsConfirmation(text) { print("sent"); return 0 }
             for _ in 0..<50 {
-                if Delivery.confirmed(args[0], at: at) { print("confirmed"); return 0 }
+                if Delivery.confirmed(id, at: at) { print("confirmed"); return 0 }
                 usleep(100_000)
             }
             print("not confirmed")

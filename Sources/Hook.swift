@@ -1,26 +1,27 @@
 import Foundation
 
-/// `cue hook`: turns one Claude Code hook event (JSON on stdin) into a session file update.
-/// Never fails the hook: any error goes to hook.log and the exit code stays 0.
+/// `cue hook claude` and `cue hook codex`: turn one hook event (JSON on stdin) into a session file update.
+/// Never fails the hook: any error goes to hook.log. Codex expects JSON on stdout, so it always gets some.
 enum Hook {
-    static func run() -> Never {
+    static func run(_ agent: String) -> Never {
+        var out: Data?
         do {
-            if let out = try handle(FileHandle.standardInput.readDataToEndOfFile()) {
-                FileHandle.standardOutput.write(out)
-            }
+            out = try handle(FileHandle.standardInput.readDataToEndOfFile(), agent: agent)
         } catch {
-            log("\(error)")
+            log("\(agent): \(error)")
         }
+        if let out { FileHandle.standardOutput.write(out) } else if agent == "codex" { FileHandle.standardOutput.write(Data("{}".utf8)) }
         exit(0)
     }
 
     /// Returns the bytes to print on stdout, if any.
-    static func handle(_ data: Data) throws -> Data? {
+    static func handle(_ data: Data, agent: String) throws -> Data? {
+        guard agent == "claude" || agent == "codex" else { throw HookError.unknownAgent }
         guard let input = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let event = input["hook_event_name"] as? String,
               let id = input["session_id"] as? String, Store.validID(id)
         else { throw HookError.badInput }
-        if input["agent_id"] != nil { return nil }  // subagent events don't change the main session
+        if input["agent_id"] != nil { return nil }  // Claude subagent events don't change the main session
 
         let wrote: Session? = try Store.locked {
             if event == "SessionEnd" {
@@ -28,19 +29,25 @@ enum Hook {
                 return nil
             }
             let old = Store.read(id)
-            var s = old ?? Session(sessionId: id, cwd: "", status: "working", updatedAt: 0)
+            var s = old ?? Session(sessionId: id, agent: agent, cwd: "", status: "working", updatedAt: 0)
             let now = Date().timeIntervalSince1970
+            let turn = input["turn_id"] as? String
+            // Codex subagents report under the parent's session id. Once idle, events from another turn are theirs.
+            let foreignTurn = agent == "codex" && s.status == "idle" && turn != nil && turn != s.turnId
             switch event {
             case "SessionStart":
                 // Compaction can run mid-turn; any other start (startup, resume, clear, fork) waits for input.
                 if input["source"] as? String != "compact" { s.status = "idle" } else if old == nil { s.status = "working" }
+
             case "UserPromptSubmit":
                 s.status = "working"
                 s.lastPromptAt = now
+                s.turnId = turn
             case "PostToolUse", "PostToolUseFailure", "ElicitationResult":
-                if old?.status == "working" { return nil }  // hot path: no write while working
+                if old?.status == "working" || foreignTurn { return nil }  // hot path: no write while working
                 s.status = "working"
             case "PermissionRequest", "Elicitation":
+                if foreignTurn { return nil }
                 s.status = "needs_you"
             case "Stop":
                 s.status = "idle"
@@ -48,6 +55,9 @@ enum Hook {
             case "StopFailure":
                 s.status = "idle"
                 s.lastMessage = "API error: \(input["error"] as? String ?? "unknown")"
+            case "Interrupt":
+                if let turn, let current = s.turnId, turn != current { return nil }  // a late Esc for an earlier turn
+                s.status = "idle"
             case "Notification":
                 guard input["notification_type"] as? String == "idle_prompt", s.status == "working" else { return nil }
                 s.status = "idle"
@@ -56,20 +66,36 @@ enum Hook {
             }
             s.cwd = input["cwd"] as? String ?? s.cwd
             s.transcriptPath = input["transcript_path"] as? String ?? s.transcriptPath
-            let env = ProcessInfo.processInfo.environment
-            // Inside tmux, ITERM_SESSION_ID is a stale copy from the tmux server, so drop it.
-            s.itermSessionId = env["TMUX"] == nil ? env["ITERM_SESSION_ID"]?.split(separator: ":").last.map(String.init) : nil
-            if let p = Proc.claude() {
-                s.claudePid = p.pid
-                s.claudeStart = p.start
-                s.tty = p.tty
+            if agent == "claude" {
+                // Codex hooks run in its shared daemon, whose environment and process tree say nothing
+                // about the session's tab. Claude hooks run under the session's own claude process.
+                let env = ProcessInfo.processInfo.environment
+                // Inside tmux, ITERM_SESSION_ID is a stale copy from the tmux server, so drop it.
+                s.itermSessionId = env["TMUX"] == nil ? env["ITERM_SESSION_ID"]?.split(separator: ":").last.map(String.init) : nil
+                if let p = Proc.claude() {
+                    s.pid = p.pid
+                    s.pidStart = p.start
+                    s.tty = p.tty
+                }
+            }
+            // Codex writes the rollout lazily, so the originator may show up only on a later write.
+            if agent == "codex", !Codex.interactive(s.transcriptPath) {
+                Store.delete(id)
+                return nil
+            }
+            if agent == "codex", old == nil, event == "SessionStart" {
+                // /clear, /new and /resume start a new Codex session in the same TUI. Without this, the old
+                // thread's row stays sendable for 30 minutes and a prompt would run in a thread nobody sees.
+                for o in Store.all() where o.agent == "codex" && o.sessionId != id && o.cwd == s.cwd && o.status == "idle" {
+                    Store.delete(o.sessionId)
+                }
             }
             s.updatedAt = now
             try Store.write(s)
             return s
         }
 
-        guard let s = wrote, event == "Stop" || event == "StopFailure" else { return nil }
+        guard agent == "claude", let s = wrote, event == "Stop" || event == "StopFailure" else { return nil }
         let detail = s.lastMessage?.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
         let verb = event == "Stop" ? "finished" : "stopped"
         return try notification("\(s.project) \(verb): \(detail)")
@@ -96,4 +122,18 @@ enum Hook {
     }
 }
 
-enum HookError: Error { case badInput }
+enum HookError: Error { case badInput, unknownAgent }
+
+enum Codex {
+    /// Codex also fires hooks for `codex exec` and other clients. A rollout's first line names its
+    /// originator; rows are for the interactive TUI. Unknown (no rollout yet) counts as interactive.
+    static func interactive(_ rollout: String?) -> Bool {
+        guard let rollout, let h = FileHandle(forReadingAtPath: rollout) else { return true }
+        defer { try? h.close() }
+        guard let line = h.readData(ofLength: 65_536).split(separator: UInt8(ascii: "\n")).first,
+              let entry = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any],
+              let originator = (entry["payload"] as? [String: Any])?["originator"] as? String
+        else { return true }
+        return originator == "codex-tui"
+    }
+}

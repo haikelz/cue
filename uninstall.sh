@@ -1,12 +1,13 @@
 #!/bin/sh
-# Remove Cue's hooks from ~/.claude/settings.json and delete the app. Other hooks stay.
+# Remove Cue's hooks from Claude Code and Codex, and the app. Other hooks stay.
 set -eu
 
 APP="$HOME/Applications/Cue.app"
 BIN="$APP/Contents/MacOS/cue"
 CLAUDE="$HOME/.claude/settings.json"
+CODEX="$HOME/.codex/hooks.json"
 
-for f in "$CLAUDE"; do
+for f in "$CLAUDE" "$CODEX"; do
   if [ -L "$f" ]; then echo "$f is a symlink; run this against its target instead." >&2; exit 1; fi
 done
 
@@ -32,7 +33,8 @@ drop() {
 }
 
 drop "$CLAUDE" "$BIN"
+drop "$CODEX" "'$(printf %s "$BIN" | sed "s/'/'\\\\''/g")' hook codex"
 pkill -xf "$BIN" 2>/dev/null || true
 rm -rf "$APP"
-echo "Removed Cue."
+echo "Removed Cue. Codex may ask you to re-review hooks that were listed after Cue's in /hooks."
 echo "Session files stay in ~/.cue until you delete them."
