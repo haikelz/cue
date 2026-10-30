@@ -246,11 +246,11 @@ struct PopoverView: View {
                         .font(.callout).foregroundStyle(.secondary)
                 }
                 .padding(16)
-            } else if model.rows.count <= 4 {
+            } else if model.rows.count <= 3 {
                 rowList
             } else {
-                // ponytail: fixed height past 4 rows; a measured height would need a GeometryReader dance.
-                ScrollView { rowList }.frame(height: 560)
+                // ponytail: fixed height past 3 rows; a measured height would need a GeometryReader dance.
+                ScrollView { rowList }.frame(height: 600)
             }
             Divider()
             HStack {
@@ -281,6 +281,7 @@ struct PopoverView: View {
 struct RowView: View {
     @EnvironmentObject var model: Model
     let session: Session
+    @FocusState private var editing: Bool
 
     var body: some View {
         let key = session.rowKey
@@ -301,13 +302,15 @@ struct RowView: View {
                 Text(message.split(whereSeparator: \.isNewline).joined(separator: " "))
                     .font(.callout).foregroundStyle(.secondary).lineLimit(2)
             }
-            HStack(alignment: .top, spacing: 6) {
-                TextField(placeholder(target), text: draft, axis: .vertical)
-                    .lineLimit(1...6)
-                    .textFieldStyle(.roundedBorder)
-                    .disabled(!canType)
-                    .onSubmit { if canSend { model.send(session) } }
-                Button("Send") { model.send(session) }.disabled(!canSend)
+            PromptEditor(text: draft, placeholder: placeholder(target), enabled: canType)
+                .focused($editing)
+            HStack(spacing: 6) {
+                if canType { Text("⌘↩ to send").font(.caption).foregroundStyle(.secondary) }
+                Spacer()
+                // Only the row being typed in owns ⌘Return, so rows never compete for the shortcut.
+                Button("Send") { model.send(session) }
+                    .disabled(!canSend)
+                    .keyboardShortcut(editing ? KeyboardShortcut(.return, modifiers: .command) : nil)
                 if session.agent != "codex" {  // Codex hooks run in its daemon, so the tab is unknown
                     Button("Open") { model.open(session) }.disabled(session.itermSessionId == nil)
                 }
@@ -323,6 +326,37 @@ struct RowView: View {
         if !target { return "Not in iTerm2" }
         if session.isClaude { return session.status == "needs_you" ? "Answer in terminal" : "Next prompt" }
         return session.status == "idle" ? "Next prompt" : "Queue a prompt"
+    }
+}
+
+/// A four-line text area for the next prompt; longer prompts scroll inside it.
+/// Return adds a line break; the row's Send button takes ⌘Return.
+struct PromptEditor: View {
+    @Binding var text: String
+    let placeholder: String
+    let enabled: Bool
+
+    var body: some View {
+        TextEditor(text: $text)
+            .font(.body)
+            .scrollContentBackground(.hidden)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 6)
+            .frame(height: 76)
+            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.35)))
+            .overlay(alignment: .topLeading) {
+                if text.isEmpty {
+                    Text(placeholder)
+                        .font(.body)
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 9)  // TextEditor's 5 pt line padding plus ours
+                        .padding(.vertical, 6)
+                        .allowsHitTesting(false)
+                }
+            }
+            .disabled(!enabled)
+            .opacity(enabled ? 1 : 0.6)
     }
 }
 
