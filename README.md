@@ -2,20 +2,9 @@
 
 A macOS menubar app for people who run many coding agents at once. Cue lists your Claude Code, Codex and Amp sessions with their status and last reply, and you send any of them its next prompt without hunting for its terminal window.
 
-```
- >_ 3                            ← menubar: 3 sessions wait for you
-┌────────────────────────────────────────────┐
-│ Claude · api-server         Idle · 3m      │
-│ All 42 tests pass. The /orders endpoint…   │
-│ [Next prompt                   ] Send Open │
-├────────────────────────────────────────────┤
-│ Codex · billing             Working · 40s  │
-│ [Queue a prompt                ] Send      │
-├────────────────────────────────────────────┤
-│ Amp · web-dashboard         Idle · 1m      │
-│ [Next prompt                   ] Send Open │
-└────────────────────────────────────────────┘
-```
+<p align="center">
+  <img src="docs/images/popover.png" width="380" alt="Cue's popover listing four sessions: a Claude Code session waiting on a permission prompt, an idle Claude Code session, an idle Amp thread, and a working Codex session that queues prompts">
+</p>
 
 | | Claude Code | Codex | Amp |
 | --- | --- | --- | --- |
