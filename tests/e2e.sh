@@ -76,6 +76,8 @@ $BIN send $B 'Run this exact bash command: touch e2e-permission.txt' > /dev/null
 wait_for 60 '[[ $(field $B status) == needs_you ]]'
 check "permission dialog -> needs_you" "$(field $B status)" needs_you
 check "send refused during dialog" "$($BIN send $B 'nope' 2>&1)" "Claude needs you in the terminal"
+# PermissionRequest fires before Claude Code draws the dialog; wait for it before faking a stale "idle".
+wait_for 15 '[[ $($T screen $sidB) == *"Do you want to proceed"* ]]'
 f=$SESSIONS/$B.json; jq '.status = "idle"' $f > $f.t && mv $f.t $f
 check "input-box check refuses a forced idle" "$($BIN send $B 'nope' 2>&1)" "Claude's input box isn't on screen (dialog, editor or menu open)"
 $T key $sidB 27 > /dev/null
@@ -133,12 +135,14 @@ fi
 # 8. Codex: hooks list the session, `codex queue` delivers.
 if grep -q "Cue.app/Contents/MacOS/cue' hook codex" ~/.codex/hooks.json 2> /dev/null; then
   mkdir -p $W/codex
+  # Rows left by earlier runs in this folder would pass for the new session.
+  for f in $SESSIONS/*.json; do [[ $(jq -r '.agent + .cwd' $f) == "codex$W/codex" ]] && rm -f $f; done
   sidC=$($T new); sleep 1
   $T type $sidC "cd $W/codex && codex" > /dev/null; $T key $sidC 13 > /dev/null
   trusted=yes
   for i in {1..40}; do
     screen=$($T screen $sidC)
-    if [[ $screen == *"Update available"* ]]; then $T key $sidC 27 > /dev/null
+    if [[ $screen == *"Update available"*"enter continue"* ]]; then $T key $sidC 27 > /dev/null  # the dialog, not the banner left after it
     elif [[ $screen == *"Trust this folder"* ]]; then $T key $sidC 13 > /dev/null
     elif [[ $screen == *"Hooks need review"* || $screen == *"/hooks"* ]]; then trusted=no; break
     elif [[ $screen == *"Ask Codex to do anything"* ]]; then
@@ -170,6 +174,7 @@ if grep -q "Cue.app/Contents/MacOS/cue' hook codex" ~/.codex/hooks.json 2> /dev/
     print "skip  Codex: trust Cue's hooks in Codex's /hooks first"
   fi
   $T key $sidC 3 > /dev/null; sleep 0.5; $T key $sidC 3 > /dev/null; sleep 1; $T close $sidC > /dev/null
+  [[ -n ${C:-} ]] && rm -f $SESSIONS/$C.json  # Codex reports the end only after 30 unopened minutes
 else
   print "skip  Codex: run ./install.sh"
 fi
