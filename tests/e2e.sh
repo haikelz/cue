@@ -1,12 +1,12 @@
 #!/bin/zsh
 # End-to-end: two real Claude Code sessions in new iTerm2 windows, prompts sent through
-# `ClaudeRelay send`. Costs a few small model calls. Needs iTerm2, claude and jq.
+# `cue send`. Costs a few small model calls. Needs iTerm2, claude and jq.
 set -u
 cd "${0:A:h}/.."
-BIN=$PWD/.build/release/ClaudeRelay
+BIN=$PWD/.build/release/cue
 T=$PWD/tests/iterm.sh
 W=$PWD/.spike/e2e
-SESSIONS=$HOME/.claude/relay/sessions
+SESSIONS=$HOME/.cue/sessions
 fails=0
 
 check() { if [[ "$2" == "$3" ]]; then print "ok    $1"; else print "FAIL  $1: got '$2', want '$3'"; fails=$((fails+1)); fi; }

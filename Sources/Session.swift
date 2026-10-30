@@ -48,8 +48,8 @@ struct Session: Codable, Equatable {
 }
 
 enum Store {
-    static let root: URL = ProcessInfo.processInfo.environment["RELAY_DIR"].map { URL(fileURLWithPath: $0) }
-        ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/relay")
+    static let root: URL = ProcessInfo.processInfo.environment["CUE_DIR"].map { URL(fileURLWithPath: $0) }
+        ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".cue")
     static let sessions = root.appendingPathComponent("sessions")
 
     /// Session ids become file names, so accept the UUID alphabet and nothing else.

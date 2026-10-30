@@ -193,7 +193,7 @@ enum Delivery {
         p.waitUntilExit()
         guard p.terminationStatus == 0 else {
             if err.contains("-1743") || err.contains("Not authorized") {
-                return .failure(ScriptError(message: "Allow Claude Relay to control iTerm2 in System Settings > Privacy & Security > Automation"))
+                return .failure(ScriptError(message: "Allow Cue to control iTerm2 in System Settings > Privacy & Security > Automation"))
             }
             if p.terminationReason == .uncaughtSignal { return .failure(ScriptError(message: "iTerm2 didn't answer in \(Int(timeout)) s")) }
             return .failure(ScriptError(message: err.trimmingCharacters(in: .whitespacesAndNewlines)))
@@ -265,12 +265,12 @@ enum Delivery {
         """)
 }
 
-/// `ClaudeRelay send <session-id> <text>`: the app's delivery path, for tests and scripts.
+/// `cue send <session-id> <text>`: the app's delivery path, for tests and scripts.
 /// Exit 0 = sent and confirmed, 1 = refused or failed, 2 = sent but not confirmed in 5 s.
 enum SendCommand {
     static func run(_ args: [String]) -> Int32 {
         guard args.count == 2 else {
-            FileHandle.standardError.write(Data("usage: ClaudeRelay send <session-id> <text>\n".utf8))
+            FileHandle.standardError.write(Data("usage: cue send <session-id> <text>\n".utf8))
             return 1
         }
         switch Delivery.send(sessionId: args[0], text: args[1]) {

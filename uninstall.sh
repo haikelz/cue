@@ -1,29 +1,38 @@
 #!/bin/sh
-# Remove Claude Relay's hooks from ~/.claude/settings.json and delete the app. Other hooks stay.
+# Remove Cue's hooks from ~/.claude/settings.json and delete the app. Other hooks stay.
 set -eu
 
-APP="$HOME/Applications/ClaudeRelay.app"
-BIN="$APP/Contents/MacOS/ClaudeRelay"
-SETTINGS="$HOME/.claude/settings.json"
+APP="$HOME/Applications/Cue.app"
+BIN="$APP/Contents/MacOS/cue"
+CLAUDE="$HOME/.claude/settings.json"
 
-[ -L "$SETTINGS" ] && { echo "$SETTINGS is a symlink; run this against its target instead." >&2; exit 1; }
-if [ -f "$SETTINGS" ]; then
-  cp "$SETTINGS" "$SETTINGS.relay-backup-$(date +%Y%m%d-%H%M%S)"
-  TMP=$(mktemp "$SETTINGS.XXXXXX")
-  trap 'rm -f "$TMP"' EXIT
-  jq --arg bin "$BIN" '
-    if .hooks then
-      .hooks |= with_entries(
-        (.value |= (map(if .hooks then .hooks |= map(select(.command != $bin)) else . end) | map(select(.hooks != []))))
-        | select(.value != []))
-    else . end
-  ' "$SETTINGS" > "$TMP"
-  jq -e . "$TMP" > /dev/null
-  chmod "$(stat -f %Lp "$SETTINGS")" "$TMP"
-  mv "$TMP" "$SETTINGS"
-  trap - EXIT
-fi
+for f in "$CLAUDE"; do
+  if [ -L "$f" ]; then echo "$f is a symlink; run this against its target instead." >&2; exit 1; fi
+done
 
+# drop <file> <command>: remove every handler running <command>, keep the rest of each group.
+drop() {
+  [ -f "$1" ] || return 0
+  cp "$1" "$1.cue-backup-$(date +%Y%m%d-%H%M%S)"
+  ls -t "$1".cue-backup-* | tail -n +4 | while IFS= read -r old; do rm -f "$old"; done  # keep the last 3
+  tmp=$(mktemp "$1.XXXXXX")
+  if jq --arg cmd "$2" '
+      if .hooks then
+        .hooks |= with_entries(
+          (.value |= (map(if .hooks then .hooks |= map(select(.command != $cmd)) else . end) | map(select(.hooks != []))))
+          | select(.value != []))
+      else . end' "$1" > "$tmp" && jq -e . "$tmp" > /dev/null; then
+    chmod "$(stat -f %Lp "$1")" "$tmp"
+    mv "$tmp" "$1"
+  else
+    rm -f "$tmp"
+    echo "Couldn't update $1; it is unchanged." >&2
+    exit 1
+  fi
+}
+
+drop "$CLAUDE" "$BIN"
 pkill -xf "$BIN" 2>/dev/null || true
 rm -rf "$APP"
-echo "Removed Claude Relay. Session files stay in ~/.claude/relay until you delete them."
+echo "Removed Cue."
+echo "Session files stay in ~/.cue until you delete them."

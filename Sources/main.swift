@@ -11,5 +11,5 @@ case "selftest":
     exit(SelfTest.run())
 default:
     signal(SIGPIPE, SIG_IGN)
-    RelayApp.main()
+    CueApp.main()
 }

@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-struct RelayApp: App {
+struct CueApp: App {
     @StateObject private var model = Model()
 
     var body: some Scene {
@@ -27,7 +27,7 @@ final class Model: ObservableObject {
     private var probing: Set<String> = []
     private var timer: Timer?
     /// osascript calls block, so they run one at a time here, off the main thread and off Swift's task pool.
-    private let worker = DispatchQueue(label: "claude-relay.osascript")
+    private let worker = DispatchQueue(label: "cue.osascript")
 
     var waiting: Int { sessions.filter { $0.status != "working" && $0.itermSessionId != nil }.count }
 
@@ -191,7 +191,7 @@ struct PopoverView: View {
                     Text("No Claude Code sessions yet").font(.headline)
                     Text(model.hooksInstalled
                          ? "A session appears after its next prompt or reply."
-                         : "Hooks are missing from ~/.claude/settings.json. Run ./install.sh in the claude-relay folder.")
+                         : "Hooks are missing from ~/.claude/settings.json. Run ./install.sh in the cue folder.")
                         .font(.callout).foregroundStyle(.secondary)
                 }
                 .padding(16)

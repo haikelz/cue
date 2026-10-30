@@ -1,11 +1,11 @@
 #!/bin/zsh
-# State-machine check for `ClaudeRelay hook`. Runs against a temp RELAY_DIR; touches nothing else.
+# State-machine check for `cue hook`. Runs against a temp CUE_DIR; touches nothing else.
 set -u
 zmodload zsh/datetime
 cd "${0:A:h}/.."
-BIN=${BIN:-.build/release/ClaudeRelay}
-export RELAY_DIR=$(mktemp -d)
-trap 'rm -rf "$RELAY_DIR"' EXIT
+BIN=${BIN:-$PWD/.build/release/cue}
+export CUE_DIR=$(mktemp -d)
+trap 'rm -rf "$CUE_DIR"' EXIT
 fails=0
 ID=0a1b2c3d-0000-4000-8000-000000000001
 
@@ -13,15 +13,15 @@ ID=0a1b2c3d-0000-4000-8000-000000000001
 
 hook() { print -r -- "$1" | "$BIN" hook; }
 ev() { hook "{\"hook_event_name\":\"$1\",\"session_id\":\"${3:-$ID}\",\"cwd\":\"/tmp/demo-project\",\"transcript_path\":\"/tmp/none.jsonl\"${2:+,$2}}"; }
-field() { jq -r ".$1" "$RELAY_DIR/sessions/${2:-$ID}.json" 2>/dev/null; }
+field() { jq -r ".$1" "$CUE_DIR/sessions/${2:-$ID}.json" 2>/dev/null; }
 check() { if [[ "$2" == "$3" ]]; then print "ok    $1"; else print "FAIL  $1: got '$2', want '$3'"; fails=$((fails+1)); fi; }
 
 out=$(ev SessionStart '"source":"startup"')
 check "SessionStart registers idle" "$(field status)" idle
 check "SessionStart prints nothing" "$out" ""
 check "cwd recorded" "$(field cwd)" /tmp/demo-project
-check "file mode 0600" "$(stat -f %Lp $RELAY_DIR/sessions/$ID.json)" 600
-check "folder mode 0700" "$(stat -f %Lp $RELAY_DIR/sessions)" 700
+check "file mode 0600" "$(stat -f %Lp $CUE_DIR/sessions/$ID.json)" 600
+check "folder mode 0700" "$(stat -f %Lp $CUE_DIR/sessions)" 700
 
 ev UserPromptSubmit '"prompt":"hi"'
 check "UserPromptSubmit -> working" "$(field status)" working
@@ -77,20 +77,20 @@ ev SessionStart '"source":"compact"' $C
 check "compact SessionStart on a new file -> working" "$(field status $C)" working
 
 ev SessionEnd '"reason":"prompt_input_exit"'
-check "SessionEnd deletes the file" "$([[ -e $RELAY_DIR/sessions/$ID.json ]] && print exists || print gone)" gone
+check "SessionEnd deletes the file" "$([[ -e $CUE_DIR/sessions/$ID.json ]] && print exists || print gone)" gone
 
 out=$(print -r -- 'not json' | "$BIN" hook); code=$?
 check "malformed input exits 0" "$code" 0
 check "malformed input prints nothing" "$out" ""
-check "malformed input is logged" "$(wc -l < $RELAY_DIR/hook.log | tr -d " ")" 1
+check "malformed input is logged" "$(wc -l < $CUE_DIR/hook.log | tr -d " ")" 1
 
 hook '{"hook_event_name":"Stop","session_id":"../escape","cwd":"/tmp"}'
-check "path-like session id is rejected" "$(ls $RELAY_DIR/sessions | grep -c escape)" 0
+check "path-like session id is rejected" "$(ls $CUE_DIR/sessions | grep -c escape)" 0
 
 P=0a1b2c3d-0000-4000-8000-000000000003
 for i in {1..10}; do ev PostToolUse '"tool_name":"Read"' $P & done; wait
-check "10 parallel hooks leave valid JSON" "$(jq -r .status $RELAY_DIR/sessions/$P.json)" working
-check "no temp files left" "$(ls -a $RELAY_DIR/sessions | grep -c tmp)" 0
+check "10 parallel hooks leave valid JSON" "$(jq -r .status $CUE_DIR/sessions/$P.json)" working
+check "no temp files left" "$(ls -a $CUE_DIR/sessions | grep -c tmp)" 0
 
 start=$EPOCHREALTIME
 for i in {1..100}; do ev PostToolUse '"tool_name":"Read"' $P; done

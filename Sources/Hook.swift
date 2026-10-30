@@ -1,6 +1,6 @@
 import Foundation
 
-/// `ClaudeRelay hook`: turns one Claude Code hook event (JSON on stdin) into a session file update.
+/// `cue hook`: turns one Claude Code hook event (JSON on stdin) into a session file update.
 /// Never fails the hook: any error goes to hook.log and the exit code stays 0.
 enum Hook {
     static func run() -> Never {

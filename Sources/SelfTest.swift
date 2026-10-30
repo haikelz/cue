@@ -1,6 +1,6 @@
 import Foundation
 
-/// `ClaudeRelay selftest`: asserts the pure functions that guard typing. Screens are real captures
+/// `cue selftest`: asserts the pure functions that guard typing. Screens are real captures
 /// from Claude Code 2.1.285 in iTerm2. Run by tests/check.sh.
 enum SelfTest {
     static func run() -> Int32 {
