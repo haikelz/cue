@@ -5,28 +5,31 @@
 | Path | Purpose |
 | --- | --- |
 | `Sources/main.swift` | Picks the mode (app, `hook`, `send`, `selftest`) before AppKit loads |
-| `Sources/Session.swift` | Session model, file store, lock, `sysctl` process facts, interrupt detection |
-| `Sources/Hook.swift` | Hook mode: hook event to status, notification output |
-| `Sources/Delivery.swift` | The send pipeline: sanitizing, checks, AppleScript, the `send` command |
+| `Sources/Session.swift` | Session model, file store, lock, config, `sysctl` process facts, Claude interrupt detection |
+| `Sources/Hook.swift` | Hook mode for Claude Code and Codex: event to status, notification output, Codex originator check |
+| `Sources/Delivery.swift` | Sending: Claude typing with its checks, `codex queue`, the process runner, the `send` command |
+| `Sources/Inbox.swift` | The app's half of the Amp inbox: drop, receipt, withdraw |
 | `Sources/App.swift` | Menubar app: model, popover, rows |
 | `Sources/SelfTest.swift` | Asserts for the pure functions, using real screen captures |
+| `plugins/amp/cue.ts` | The Amp plugin; `drainInbox` is exported for the tests |
 | `Info.plist` | Bundle id, `LSUIElement`, the Automation usage string |
-| `install.sh`, `uninstall.sh` | Build, install, and settings merge |
-| `tests/check.sh` | Hook state machine and selftest, in a temp folder |
-| `tests/e2e.sh` | Real sessions in iTerm2 windows |
+| `install.sh`, `uninstall.sh` | Build, install, migration, and settings merges |
+| `tests/check.sh` | Hook state machines, delivery and the inbox, in a temp folder |
+| `tests/amp-plugin.mjs` | Drives the real Amp plugin through a fake PluginAPI, for `tests/check.sh` |
+| `tests/e2e.sh` | Real Claude Code, Amp and Codex sessions in iTerm2 windows |
 | `tests/iterm.sh` | Drives iTerm2 tabs by session id, for the e2e test |
 
 ## Build and run
 
 ```sh
-swift build -c release            # .build/release/ClaudeRelay
-.build/release/ClaudeRelay        # run the app without installing
-./install.sh                      # build, install to ~/Applications, merge hooks, launch
+swift build -c release            # .build/release/cue
+.build/release/cue                # run the app without installing
+./install.sh                      # build, install, wire up the agents, launch
 ```
 
-The app reads `Bundle.main.executablePath` to tell whether its hooks are installed, so a build run from `.build/` shows "Hooks missing" in the footer. That's expected.
+The app reads `Bundle.main.executablePath` to tell whether its Claude hooks are installed, so a build run from `.build/` shows "Hooks missing" in the footer. That's expected.
 
-Each `./install.sh` re-signs the app ad hoc, and macOS asks for Automation permission again on the next Send.
+Each `./install.sh` re-signs the app ad hoc, and macOS asks for Automation permission again on the next Claude Code Send. Changing Cue's Codex hook command string makes Codex ask you to trust the hooks again in `/hooks`.
 
 ## Tests
 
@@ -34,48 +37,64 @@ Each `./install.sh` re-signs the app ad hoc, and macOS asks for Automation permi
 tests/check.sh
 ```
 
-Runs `ClaudeRelay selftest` (screen parsing, spinner detection, sanitizing, chunking, the box-ends-with-prompt check, interrupt parsing), then feeds recorded hook payloads to `ClaudeRelay hook` with `RELAY_DIR` set to a temp folder. It covers every status rule, file modes, malformed input, path-like session ids, ten parallel hooks, and fails if a hook run averages 50 ms or more. It touches nothing outside the temp folder.
+Runs `cue selftest`, then, with `CUE_DIR` set to a temp folder:
+
+- every Claude Code and Codex status rule, file modes, malformed input, path-like ids, ten parallel hooks, and a 50 ms average per hook run;
+- Codex specifics: `codex exec` skipping, a late `Interrupt` from an earlier turn, and a new session retiring the folder's old idle row;
+- Codex delivery against a fake `codex` that records its arguments and PATH;
+- the Amp inbox, by running the plugin's real `drainInbox` under Node against `cue send`: delivery, two plugin processes delivering once, withdrawal of an unclaimed prompt, an orphaned prompt, the 60 KB cap, a stale heartbeat, and the file checks;
+- the whole Amp plugin, through `tests/amp-plugin.mjs` and a fake PluginAPI: seeding the open thread, state changes, `agent.end`, a `cue send` round trip, and a thread switch.
+
+It touches nothing outside the temp folder.
 
 ```sh
 tests/e2e.sh
 ```
 
-Opens two iTerm2 windows running `claude` in `.spike/e2e/`, then drives them through `ClaudeRelay send`: a one-line prompt, a send over a half-typed draft, a 5-line prompt with a 400-character line, a permission dialog (in default permission mode), a forced-idle file during that dialog, the Ctrl+G editor, Ctrl+Z, and a closed tab. It checks the right tab got each prompt, the other got nothing, and the refusals left no stray text. It makes a few small model calls and closes its windows when done. Don't touch the keyboard while it runs.
+Opens iTerm2 windows and drives real sessions through `cue send`:
 
-The sessions use `--settings .spike/e2e/settings.json`, which points the hooks at `.build/release/ClaudeRelay`, so the test runs against your latest build without reinstalling.
+- **Claude Code** (two sessions): a one-line prompt, a send over a half-typed draft, a 5-line prompt, a permission dialog, a forced-idle file during that dialog, the Ctrl+G editor, Ctrl+Z, and a closed tab.
+- **Amp**, when the installed plugin matches `plugins/amp/cue.ts`: registration, delivery, a send during a running turn, and the heartbeat stopping after the window closes.
+- **Codex**, when Cue's hooks are in `~/.codex/hooks.json` and trusted: registration, a confirmed send, and a queued send during a running turn.
+
+It makes a few small model calls and closes its windows when done. Don't touch the keyboard while it runs. The Claude sessions use `--settings .spike/e2e/settings.json`, which points their hooks at `.build/release/cue`.
 
 ## Debugging
 
 ```sh
-cat ~/.claude/relay/sessions/*.json | jq -c '{cwd, status, updated_at}'   # what the app sees
-tail ~/.claude/relay/hook.log                                             # hook errors
-echo '{"hook_event_name":"Stop","session_id":"x","cwd":"/tmp"}' | RELAY_DIR=/tmp/r .build/release/ClaudeRelay hook
-.build/release/ClaudeRelay send <session-id> "Reply with PONG"           # exit 0 confirmed, 1 refused, 2 unconfirmed
+jq -c '{agent, cwd, status, updated_at}' ~/.cue/sessions/*.json         # what the app sees
+tail ~/.cue/hook.log                                                     # hook errors
+echo '{"hook_event_name":"Stop","session_id":"x","cwd":"/tmp"}' | CUE_DIR=/tmp/c .build/release/cue hook claude
+.build/release/cue send <session-id> "Reply with PONG"                   # exit 0 delivered, 1 refused, 2 unconfirmed
+ls -la ~/.cue/inbox/*/                                                   # Amp prompts not yet claimed
 ```
 
-`send` prints the same refusal messages as the popover, which makes it the quickest way to see why a row won't send.
+`send` prints the same messages as the popover, which makes it the quickest way to see why a row won't send. For the Amp plugin, Amp's own plugin logs show `cue inbox` errors.
 
 Avoid `screencapture` while testing: it makes macOS ask for iTerm2 screen-recording permission, and that dialog takes keyboard focus.
 
-## When Claude Code updates
+## When an agent updates
 
-Relay depends on Claude Code behavior that the hook docs don't promise. After an upgrade, run `tests/e2e.sh`. If it fails, check these assumptions:
+Cue depends on behavior the agents don't promise. After an upgrade, run `tests/e2e.sh`, and check the assumptions for the agent that changed.
 
-| Assumption | Where | How to check |
-| --- | --- | --- |
-| The input box is a `❯` line in column 0 between two `─` rule lines | `Delivery.box` | Read a tab: `tests/iterm.sh screen <iterm-id>` |
-| The working spinner reads `✻ Word… (` right above the box | `Delivery.isSpinner` | Capture a tab while Claude works |
-| Input that arrives in a burst becomes `<pasted_content>` | Chunk size and gap in `Delivery.items` and `typeScript` | Send a long line and grep the transcript for `pasted_content` |
-| ESC + CR inserts a line break | `typeScript` | Send a 3-line prompt |
-| Ctrl+U clears to line start; Ctrl+Y restores | Step 4 of the send pipeline | Type a draft, send over it, press Ctrl+Y |
-| Esc and denials write `[Request interrupted by user…]` | `Session.interrupted` | Interrupt a turn and read the transcript tail |
-| Hooks run as children of a process named `claude` | `Proc.claude()` | `ps -o pid,ppid,comm` from inside a hook |
+| Agent | Assumption | Where | How to check |
+| --- | --- | --- | --- |
+| Claude Code | The input box is a `❯` line in column 0 between two `─` rule lines | `Delivery.box` | `tests/iterm.sh screen <iterm-id>` |
+| Claude Code | The working spinner reads `✻ Word… (` right above the box | `Delivery.isSpinner` | Capture a tab while Claude works |
+| Claude Code | Input that arrives in a burst becomes `<pasted_content>` | Chunking in `Delivery.items` and `typeScript` | Send a long line, grep the transcript for `pasted_content` |
+| Claude Code | ESC + CR inserts a line break; Ctrl+U clears to line start | `typeScript`, send step 4 | Send a 3-line prompt over a draft |
+| Claude Code | Esc and denials write `[Request interrupted by user…]` | `Session.interrupted` | Interrupt a turn, read the transcript tail |
+| Claude Code | Hooks run as children of a process named `claude` | `Proc.claude()` | `ps -o pid,ppid,comm` from inside a hook |
+| Codex | Hook events and payload fields match the hooks docs, with `Interrupt` and `turn_id` | `Hook.handle` | Read `~/.cue/sessions/*.json` after a turn |
+| Codex | A rollout's first line names its `originator`, `codex-tui` for the TUI | `Codex.interactive` | `head -1` of a rollout in `~/.codex/sessions/` |
+| Codex | `codex queue --thread= --message=` queues into a live session | `Delivery.queueToCodex` | Send to an open session |
+| Amp | `amp.activeThread`, thread `state`, `appendUserMessage` and `agent.end` behave as the plugin API docs say | `plugins/amp/cue.ts` | `amp plugins show-docs`, then the e2e Amp part |
 
-Update the captures in `SelfTest.swift` when a screen format changes, so the selftest tracks the real UI.
+Update the captures in `SelfTest.swift` when Claude Code's screen format changes, so the selftest tracks the real UI.
 
 ## Adding a hook event
 
-1. Add a `case` to the switch in `Hook.handle` and decide its status.
-2. Add the event to the `reduce` list in `install.sh` and to the settings in `tests/e2e.sh`.
+1. Add a `case` to the switch in `Hook.handle` and decide its status for each agent.
+2. Add the event to the `reduce` lists in `install.sh` for the agents that send it, and to the settings in `tests/e2e.sh`.
 3. Add a check to `tests/check.sh`.
-4. Run `./install.sh`. A second install adds the new event and skips the existing ones.
+4. Run `./install.sh`. A second install adds the new event and skips the existing ones; Codex asks you to trust the new hook. Changing the definition of an existing Cue hook in `install.sh` (its timeout, say) updates it in place, and Codex asks you to trust it again.
