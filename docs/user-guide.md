@@ -14,16 +14,16 @@ The popover lists one row per session: Claude Code sessions, Codex sessions, and
 2. Idle, longest wait first
 3. Working, by project name
 
-Rows keep their places while the popover stays open, so a row never moves under your cursor. Past four sessions, the list scrolls.
+Rows keep their places while the popover stays open, so a row never moves under your cursor. Past three sessions, the list scrolls.
 
 Each row shows:
 
 - **Agent and project**: for example `Codex · billing`. The project is the last folder of the session's working directory. Two sessions of one agent in one folder get a short id suffix.
 - **Status badge**: the status and the time since it last changed, for example `Idle · 3m`.
 - **Last message**: the first two lines of the agent's final reply.
-- **Prompt field**: grows up to six lines.
+- **Prompt box**: a text area four lines tall; a longer prompt scrolls inside it.
 - **Send**, and **Open** for Claude Code and Amp rows.
-- **A note** under the field when something needs your attention. See [Row messages](#row-messages).
+- **A note** under the prompt box when something needs your attention. See [Row messages](#row-messages).
 
 The footer shows whether Cue's Claude Code hooks are installed, and holds the Quit button.
 
@@ -40,14 +40,14 @@ Claude Code drafts follow the iTerm2 tab, so a draft survives `/clear`. Codex an
 
 ## Sending a prompt
 
-Type in the field and press **Return** or click **Send**. **Option+Return** adds a line break. Each agent takes the prompt its own way.
+Type in the prompt box. **Return** adds a line break; **⌘Return** or the **Send** button sends. The Send button of the row you're typing in turns blue, since it's the one ⌘Return triggers. Each agent takes the prompt its own way.
 
 **Claude Code.** Cue types into the session's iTerm2 tab. Before typing anything, it checks that the session is idle, that its Claude process runs in the foreground of that tab, and that Claude's input box sits on screen with no spinner above it. Then it:
 
 1. Clears any text already in the input box with Ctrl+U. If that text was a draft of yours, press **Ctrl+Y** in the tab to get it back.
 2. Types your prompt in small chunks, so Claude Code reads it as typed text rather than a paste.
 3. Runs every check again, confirms the box ends with your prompt, and presses Return.
-4. Waits up to 5 seconds for the session to report the new prompt, then clears the field.
+4. Waits up to 5 seconds for the session to report the new prompt, then clears the prompt box.
 
 A long prompt takes a moment: each 200 characters adds 150 ms.
 
