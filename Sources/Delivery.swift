@@ -3,6 +3,7 @@ import Foundation
 enum Outcome {
     case sent(at: Double)  // the turn should start; `last_prompt_at` confirms it
     case accepted(String)  // the agent took the prompt itself; the note says "Sent" or "Queued"
+    case inbox(String)     // Amp: dropped in the inbox under this id; a receipt confirms it
     case refused(String)   // a check failed before anything was sent
     case failed(String)    // sending may have started; treat the prompt as at risk
 }
@@ -15,6 +16,7 @@ enum Delivery {
         guard let s = Store.read(sessionId) else { return .refused("Session is gone") }
         switch s.agent {
         case "codex": return queueToCodex(s, text)
+        case "amp": return Inbox.drop(s, text)
         default: return typeIntoClaude(s, text)
         }
     }
@@ -330,6 +332,26 @@ enum SendCommand {
             }
             print("not confirmed")
             return 2
+        case .inbox(let msg):
+            let start = Date().timeIntervalSince1970
+            while true {
+                switch Inbox.settle(thread: id, id: msg, waited: Date().timeIntervalSince1970 - start) {
+                case .delivered:
+                    print("delivered")
+                    return 0
+                case .failed(let why):
+                    FileHandle.standardError.write(Data("\(why)\n".utf8))
+                    return 1
+                case .withdrawn:
+                    FileHandle.standardError.write(Data("Amp didn't pick it up\n".utf8))
+                    return 1
+                case .unconfirmed:
+                    print("not confirmed")
+                    return 2
+                case nil:
+                    usleep(100_000)
+                }
+            }
         }
     }
 }

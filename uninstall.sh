@@ -1,5 +1,5 @@
 #!/bin/sh
-# Remove Cue's hooks from Claude Code and Codex, and the app. Other hooks stay.
+# Remove Cue's hooks from Claude Code and Codex, its Amp plugin, and the app. Other hooks stay.
 set -eu
 
 APP="$HOME/Applications/Cue.app"
@@ -34,6 +34,7 @@ drop() {
 
 drop "$CLAUDE" "$BIN"
 drop "$CODEX" "'$(printf %s "$BIN" | sed "s/'/'\\\\''/g")' hook codex"
+rm -f "$HOME/.config/amp/plugins/cue.ts"
 pkill -xf "$BIN" 2>/dev/null || true
 rm -rf "$APP"
 echo "Removed Cue. Codex may ask you to re-review hooks that were listed after Cue's in /hooks."

@@ -1,6 +1,6 @@
 import Foundation
 
-/// One agent session, as its hook last saw it. Stored as one JSON file per session.
+/// One agent session, as its hook or plugin last saw it. Stored as one JSON file per session.
 struct Session: Codable, Equatable {
     var sessionId: String
     var agent: String  // "claude" | "codex" | "amp"
@@ -15,16 +15,17 @@ struct Session: Codable, Equatable {
     var itermSessionId: String?
     var transcriptPath: String?
     var turnId: String?     // Codex: the turn UserPromptSubmit started
+    var heartbeat: Double?  // Amp: the plugin rewrites this every 5 s
 
     var isClaude: Bool { agent == "claude" }
 
     var agentName: String { ["claude": "Claude", "codex": "Codex", "amp": "Amp"][agent] ?? agent }
 
     /// Claude rows follow the iTerm2 tab, so a draft survives /clear starting a new session.
-    /// Codex rows follow the session: several of its threads can share one tab.
+    /// Codex and Amp rows follow the session: several of their threads can share one tab.
     var rowKey: String { isClaude ? (itermSessionId ?? sessionId) : sessionId }
 
-    /// Claude prompts are typed into an iTerm2 tab; Codex takes them through `codex queue`.
+    /// Claude prompts are typed into an iTerm2 tab; Codex and Amp take them through their own channels.
     var deliverable: Bool { !isClaude || (itermSessionId != nil && tty != nil) }
 
     var project: String { URL(fileURLWithPath: cwd).lastPathComponent }

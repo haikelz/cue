@@ -1,5 +1,5 @@
 #!/bin/sh
-# Build Cue, install it to ~/Applications, and wire it into Claude Code and Codex.
+# Build Cue, install it to ~/Applications, and wire it into Claude Code, Codex and Amp.
 # Safe to run twice: hooks already present are left alone. Migrates a Claude Relay install.
 set -eu
 cd "$(dirname "$0")"
@@ -87,6 +87,12 @@ if [ -d "$HOME/.codex" ]; then
   ' --arg cmd "$CODEX_CMD"
   echo "Codex: open codex, run /hooks, and trust Cue's hooks. Codex skips hooks you haven't trusted."
   echo "Codex: for finish notifications, set notifications = true under [tui] in ~/.codex/config.toml."
+fi
+
+if command -v amp > /dev/null; then
+  mkdir -p "$HOME/.config/amp/plugins"
+  cp plugins/amp/cue.ts "$HOME/.config/amp/plugins/cue.ts"
+  echo "Amp: plugin installed. Open Amp windows load it after 'plugins: reload' or a restart."
 fi
 
 [ -n "${CUE_NO_OPEN:-}" ] || open "$APP"
