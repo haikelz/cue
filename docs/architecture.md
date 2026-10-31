@@ -202,7 +202,7 @@ Live sessions reload `~/.claude/settings.json` and `~/.codex/hooks.json` when th
 
 | Path | Contents |
 | --- | --- |
-| `~/Applications/Cue.app` | The app, ad-hoc signed, `LSUIElement` (no Dock icon) |
+| `~/Applications/Cue.app` | The app, ad-hoc signed, `LSUIElement` (no Dock icon); `Contents/Resources` holds the app icon and the menubar mark |
 | `~/.config/amp/plugins/cue.ts` | The Amp plugin |
 | `~/.cue/sessions/*.json` | One file per session |
 | `~/.cue/inbox/‹thread›/` | Amp prompts waiting for the plugin, and its receipts |

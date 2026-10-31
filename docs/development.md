@@ -13,7 +13,8 @@
 | `Sources/HotKey.swift` | The ⌃⌥Space global shortcut |
 | `Sources/SelfTest.swift` | Asserts for the pure functions, using real screen captures |
 | `plugins/amp/cue.ts` | The Amp plugin; `drainInbox` is exported for the tests |
-| `Info.plist` | Bundle id, `LSUIElement`, the Automation usage string |
+| `Info.plist` | Bundle id, `LSUIElement`, the app icon, the Automation usage string |
+| `assets/` | The icon sources (`icon.svg`, `menubar.svg`), the generated `AppIcon.icns` and `menubar.pdf`, and `build.sh` |
 | `install.sh`, `uninstall.sh` | Build, install, migration, and settings merges |
 | `tests/check.sh` | Hook state machines, delivery and the inbox, in a temp folder |
 | `tests/amp-plugin.mjs` | Drives the real Amp plugin through a fake PluginAPI, for `tests/check.sh` |
@@ -31,6 +32,16 @@ swift build -c release            # .build/release/cue
 The app reads `Bundle.main.executablePath` to tell whether its Claude hooks are installed, so a build run from `.build/` shows "Hooks missing" in the footer. That's expected.
 
 Each `./install.sh` re-signs the app ad hoc, and macOS asks for Automation permission again on the next Claude Code Send. Changing Cue's Codex hook command string makes Codex ask you to trust the hooks again in `/hooks`.
+
+## The icon
+
+`assets/icon.svg` is the app icon and `assets/menubar.svg` the menubar mark: a C with a block text cursor in its opening. After editing either, run `assets/build.sh` (it needs `rsvg-convert`, from `brew install librsvg`) and commit the regenerated `AppIcon.icns` and `menubar.pdf`; `install.sh` copies both into the bundle. The app draws `menubar.pdf` as a template image, so it must stay black on transparent. A build run from `.build/` has no bundle and shows the `terminal` SF Symbol instead.
+
+| Color | Hex | Use |
+| --- | --- | --- |
+| Ink | `#2E323C` to `#121419` | The icon's background gradient, top to bottom |
+| Paper | `#F4F1EA` | The C |
+| Amber | `#FFB224` | The cursor, with a soft glow in the app icon |
 
 ## Tests
 

@@ -1,10 +1,12 @@
 # User guide
 
-Cue lives in the menubar. Click the terminal icon, or press **⌃⌥Space** from any app, to open the popover. Find the session you want, type its next prompt, and press **⌘Return**.
+Cue lives in the menubar. Click its icon, a C with a text cursor in its opening, or press **⌃⌥Space** from any app, to open the popover. Find the session you want, type its next prompt, and press **⌘Return**.
 
 ## The menubar icon
 
-The icon shows a count when one or more sessions are idle or need you. No count means every session is working, or none is running.
+<img src="../assets/icon.svg" width="64" height="64" alt="Cue's app icon" align="right">
+
+The icon is Cue's mark: a C for Cue, with the cursor where your next prompt goes. It follows the menubar's light or dark look, and shows a count when one or more sessions are idle or need you. No count means every session is working, or none is running.
 
 ## The popover
 
