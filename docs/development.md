@@ -117,7 +117,7 @@ Cue depends on behavior the agents don't promise. After an upgrade, run `tests/e
 | Claude Code | Hooks run as children of a process named `claude` | `Proc.claude()` | `ps -o pid,ppid,comm` from inside a hook |
 | Codex | Hook events and payload fields match the hooks docs, with `Interrupt` and `turn_id` | `Hook.handle` | Read `~/.cue/sessions/*.json` after a turn |
 | Codex | A rollout's first line names its `originator`, `codex-tui` for the TUI | `Codex.interactive` | `head -1` of a rollout in `~/.codex/sessions/` |
-| Codex | `codex queue --thread= --message=` queues into a live session | `Delivery.queueToCodex` | Send to an open session |
+| Codex | `codex queue --thread= --message=` queues into a live session | `Codex.queue` | Send to an open session |
 | Codex | `codex app-server` answers `hooks/list` with `command`, `enabled` and `trustStatus` per hook | `Codex.listHooks` | Untrust a Cue hook in `/hooks`, reopen the popover |
 | Amp | `amp.activeThread`, thread `state`, `appendUserMessage` and `agent.end` behave as the plugin API docs say | `plugins/amp/cue.ts` | `amp plugins show-docs`, then the e2e Amp part |
 

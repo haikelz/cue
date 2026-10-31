@@ -140,7 +140,7 @@ tmux runs the same steps with the tmux CLI, so Ghostty, Kitty, WezTerm and Termi
 
 ### Codex: `codex queue`
 
-`Delivery.queueToCodex` runs the absolute `codex` path saved in `~/.cue/config.json` as `codex queue --thread=<id> --message=<prompt>`. The `=` forms keep a prompt that starts with `-` from parsing as a flag. Cue passes the PATH that install.sh captured, because `codex queue` may start Codex's daemon, and the daemon runs your other Codex hooks with that PATH. Exit 0 means Codex accepted the prompt, so the row shows "Sent", or "Queued" during a turn. Cue doesn't also wait for `UserPromptSubmit`: that could only turn a slow start into "Not confirmed" and a duplicate send.
+`Codex.queue` runs the absolute `codex` path saved in `~/.cue/config.json` as `codex queue --thread=<id> --message=<prompt>`. The `=` forms keep a prompt that starts with `-` from parsing as a flag. Cue passes the PATH that install.sh captured, because `codex queue` may start Codex's daemon, and the daemon runs your other Codex hooks with that PATH. Exit 0 means Codex accepted the prompt, so the row shows "Sent", or "Queued" during a turn. Cue doesn't also wait for `UserPromptSubmit`: that could only turn a slow start into "Not confirmed" and a duplicate send.
 
 ### Amp: the inbox, at most once
 
@@ -175,7 +175,7 @@ The plugin checks each inbox file before trusting it: a name of the form `<uuid>
 | Stale-working probe (Claude) | 15 s quiet | Long enough that a working session has written to its transcript |
 | Poll interval | 1 s | Rows and the count stay current; reading a dozen small files costs nothing |
 | Last message | 4,000 characters | Enough to read most replies in full; the row shows two lines until you click it |
-| AppleScript timeout | 60 s (10 s for probes and Open) | Leaves time for the first-run Automation consent dialog |
+| AppleScript timeout | 60 s for the checks and keys of a send; 10 s for the stale-row probe and Open | Leaves time for the first-run Automation consent dialog |
 | tmux timeout | 10 s | tmux answers in milliseconds; no consent dialog |
 | `codex queue` timeout | 30 s | Covers a daemon cold start |
 | Codex hook timeout | 3 s | Codex caps some events at 3 s; a hook run takes about 6 ms |
