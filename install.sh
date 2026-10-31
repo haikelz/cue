@@ -40,7 +40,7 @@ rm -rf "$APP.new" "$APP.old"
 mkdir -p "$APP.new/Contents/MacOS" "$APP.new/Contents/Resources"
 cp .build/release/cue "$APP.new/Contents/MacOS/cue"
 cp Info.plist "$APP.new/Contents/Info.plist"
-cp assets/AppIcon.icns assets/menubar.pdf "$APP.new/Contents/Resources/"
+cp assets/AppIcon.icns assets/menubar.tiff "$APP.new/Contents/Resources/"
 codesign --force --sign - "$APP.new"
 pkill -xf "$BIN" 2>/dev/null || true  # the app only; hook runs carry arguments
 if [ -d "$APP" ]; then mv "$APP" "$APP.old"; fi
