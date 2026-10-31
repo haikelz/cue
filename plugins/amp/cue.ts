@@ -43,7 +43,7 @@ function notify(tty: string | null, text: string) {
 	try {
 		const fd = fs.openSync(tty, fs.constants.O_WRONLY | fs.constants.O_NONBLOCK | fs.constants.O_NOCTTY)
 		try {
-			fs.writeSync(fd, `\x1b]9;${text.replace(/[\x00-\x1f\x7f-\x9f]/g, ' ').slice(0, 180)}\x07`)
+			fs.writeSync(fd, `\x1b]9;${Array.from(text.replace(/[\x00-\x1f\x7f-\x9f]/g, ' ')).slice(0, 180).join('')}\x07`)
 		} finally {
 			fs.closeSync(fd)
 		}
@@ -170,7 +170,7 @@ export default function (amp: PluginAPI) {
 			.join('')
 			.trim()
 		const done = event.status === 'done'
-		attached.session.last_message = done ? text.slice(0, 500) : event.status === 'error' ? 'Error' : 'Cancelled'
+		attached.session.last_message = done ? Array.from(text).slice(0, 500).join('') : event.status === 'error' ? 'Error' : 'Cancelled'
 		writeFile(sessionFile(attached.id), JSON.stringify(attached.session))
 		if (event.status !== 'cancelled') {
 			const project = path.basename(String(attached.session.cwd))
