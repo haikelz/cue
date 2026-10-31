@@ -8,8 +8,6 @@ case "hook":
 case "send":
     signal(SIGPIPE, SIG_IGN)  // osascript dying before it reads its script must not kill us
     exit(SendCommand.run(Array(CommandLine.arguments.dropFirst(2))))
-case "selftest":
-    exit(SelfTest.run())
 case "codex-health":
     // The footer's Codex check from the command line: "ok", the warning, or "no answer".
     let exe = CommandLine.arguments.dropFirst(2).first ?? Bundle.main.executablePath ?? ""
@@ -17,7 +15,7 @@ case "codex-health":
     exit(0)
 case let word? where !word.hasPrefix("-"):
     // An unknown word must not start a second copy of the app. (`open` and AppKit defaults pass flags.)
-    FileHandle.standardError.write(Data("usage: cue [hook claude|codex | send <session-id> <text> | selftest | codex-health [cue path]]\n".utf8))
+    FileHandle.standardError.write(Data("usage: cue [hook claude|codex | send <session-id> <text> | codex-health [cue path]]\n".utf8))
     exit(64)
 default:
     signal(SIGPIPE, SIG_IGN)

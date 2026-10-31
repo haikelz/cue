@@ -40,7 +40,7 @@ package enum Codex {
         struct Group: Decodable { let hooks: [ListedHook] }
     }
 
-    /// The footer's warning about Cue's Codex hooks, or nil. Pure, for the selftest.
+    /// The footer's warning about Cue's Codex hooks, or nil. Pure, so the tests can call it.
     package static func warning(_ hooks: [ListedHook], command: String) -> String? {
         let mine = hooks.filter { $0.command == command }
         if mine.count < 7 { return "Cue's Codex hooks are missing: run ./install.sh" }

@@ -9,7 +9,8 @@ trap 'rm -rf "$CUE_DIR"' EXIT
 fails=0
 ID=0a1b2c3d-0000-4000-8000-000000000001
 
-"$BIN" selftest | grep -v "^ok" || fails=$((fails+1))
+# CueCore's unit tests (swift-testing), then the binary's behavior below.
+if out=$(swift test 2>&1); then print "ok    swift test: ${${(f)out}[-1]}"; else print -r -- "$out" | grep -E "✘|error" | head -20; fails=$((fails+1)); fi
 
 hook() { print -r -- "$1" | "$BIN" hook claude; }
 ev() { hook "{\"hook_event_name\":\"$1\",\"session_id\":\"${3:-$ID}\",\"cwd\":\"/tmp/demo-project\",\"transcript_path\":\"/tmp/none.jsonl\"${2:+,$2}}"; }
