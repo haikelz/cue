@@ -51,7 +51,7 @@ enum Hook {
                 s.status = "needs_you"
             case "Stop":
                 s.status = "idle"
-                s.lastMessage = (input["last_assistant_message"] as? String).map { String($0.prefix(500)) }
+                s.lastMessage = (input["last_assistant_message"] as? String).map { String($0.prefix(4000)) }
             case "StopFailure":
                 s.status = "idle"
                 s.lastMessage = "API error: \(input["error"] as? String ?? "unknown")"

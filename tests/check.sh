@@ -43,10 +43,10 @@ check "PostToolUseFailure after denial -> working" "$(field status)" working
 ev Elicitation; check "Elicitation -> needs_you" "$(field status)" needs_you
 ev ElicitationResult; check "ElicitationResult -> working" "$(field status)" working
 
-long=$(printf 'x%.0s' {1..600})
+long=$(printf 'x%.0s' {1..4100})
 out=$(ev Stop "\"last_assistant_message\":\"All tests pass.\\nSecond line $long\"")
 check "Stop -> idle" "$(field status)" idle
-check "last message cut to 500" "$(field last_message | wc -m | tr -d ' ')" 501  # 500 + wc's newline
+check "last message cut to 4,000" "$(field last_message | wc -m | tr -d ' ')" 4001  # 4,000 + wc's newline
 check "Stop returns an OSC 9 notification" "$(print -r -- $out | jq -r .terminalSequence | cut -c2-)" "]9;demo-project finished: All tests pass."$'\a'
 
 ev Notification '"notification_type":"idle_prompt"'

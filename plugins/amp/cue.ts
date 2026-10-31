@@ -170,7 +170,7 @@ export default function (amp: PluginAPI) {
 			.join('')
 			.trim()
 		const done = event.status === 'done'
-		attached.session.last_message = done ? Array.from(text).slice(0, 500).join('') : event.status === 'error' ? 'Error' : 'Cancelled'
+		attached.session.last_message = done ? Array.from(text).slice(0, 4000).join('') : event.status === 'error' ? 'Error' : 'Cancelled'
 		writeFile(sessionFile(attached.id), JSON.stringify(attached.session))
 		if (event.status !== 'cancelled') {
 			const project = path.basename(String(attached.session.cwd))

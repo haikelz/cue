@@ -352,11 +352,13 @@ struct PopoverView: View {
     }
 
     @FocusState private var focused: String?
+    @State private var expanded: String?  // one reply open at a time keeps the popover short
 
     private var rowList: some View {
         VStack(spacing: 0) {
             ForEach(model.rows, id: \.sessionId) { s in
-                RowView(session: s, focus: $focused)
+                RowView(session: s, focus: $focused,
+                        expanded: Binding(get: { expanded == s.sessionId }, set: { expanded = $0 ? s.sessionId : nil }))
                 Divider()
             }
         }
@@ -367,6 +369,7 @@ struct RowView: View {
     @EnvironmentObject var model: Model
     let session: Session
     var focus: FocusState<String?>.Binding
+    @Binding var expanded: Bool
 
     var body: some View {
         let key = session.rowKey
@@ -385,8 +388,7 @@ struct RowView: View {
                 StatusBadge(status: target ? session.status : "none", since: session.updatedAt)
             }
             if let message = session.lastMessage, !message.isEmpty {
-                Text(message.split(whereSeparator: \.isNewline).joined(separator: " "))
-                    .font(.callout).foregroundStyle(.secondary).lineLimit(2)
+                ReplyView(message: message, expanded: $expanded)
             }
             PromptEditor(text: draft, placeholder: placeholder(target), enabled: canType)
                 .focused(focus, equals: session.sessionId)
@@ -412,6 +414,46 @@ struct RowView: View {
         if !target { return "Not in iTerm2" }
         if session.isClaude { return session.status == "needs_you" ? "Answer in terminal" : "Next prompt" }
         return session.status == "idle" ? "Next prompt" : "Queue a prompt"
+    }
+}
+
+/// The agent's last reply: two lines that expand on click, or the whole reply with its line breaks,
+/// inline Markdown and selectable text. Clicks on expanded text select; "Show less" collapses.
+struct ReplyView: View {
+    let message: String
+    @Binding var expanded: Bool
+
+    var body: some View {
+        if expanded {
+            VStack(alignment: .leading, spacing: 4) {
+                // ponytail: length decides when to scroll; measuring the text would need a GeometryReader.
+                if message.count > 600 {
+                    ScrollView { full }.frame(height: 240)
+                } else {
+                    full
+                }
+                Button("Show less") { expanded = false }.buttonStyle(.link).font(.caption)
+            }
+        } else {
+            Text(Self.markdown(message.split(whereSeparator: \.isNewline).joined(separator: " ")))
+                .font(.callout).foregroundStyle(.secondary).lineLimit(2)
+                .contentShape(Rectangle())
+                .onTapGesture { expanded = true }
+                .help("Click to read the full reply")
+        }
+    }
+
+    /// Inline Markdown (bold, code, links) as styled text; plain text when it doesn't parse.
+    static func markdown(_ text: String) -> AttributedString {
+        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        return (try? AttributedString(markdown: text, options: options)) ?? AttributedString(text)
+    }
+
+    private var full: some View {
+        Text(Self.markdown(message))
+            .font(.callout).foregroundStyle(.secondary)
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
