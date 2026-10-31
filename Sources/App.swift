@@ -1,17 +1,91 @@
 import AppKit
+import Carbon.HIToolbox
+import Combine
 import SwiftUI
 
 struct CueApp: App {
-    @StateObject private var model = Model()
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
-    var body: some Scene {
-        MenuBarExtra {
-            PopoverView().environmentObject(model)
-        } label: {
-            Image(systemName: "terminal")
-            if model.waiting > 0 { Text("\(model.waiting)") }
+    // The menubar item lives in AppDelegate. The empty Settings scene drops its ⌘, command too.
+    var body: some Scene { Settings { EmptyView() }.commands { CommandGroup(replacing: .appSettings) {} } }
+}
+
+/// Owns the menubar item and its popover. SwiftUI's MenuBarExtra can't open from code, which the
+/// global hotkey needs; an NSStatusItem with an NSPopover can.
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
+    let model = Model()
+    private var item: NSStatusItem?
+    private let popover = NSPopover()
+    private var hotKey: HotKey?
+    private var count: AnyCancellable?
+    private var closedAt = Date.distantPast
+    /// A 1-point stand-in for the icon while the menubar is hidden.
+    private let anchor: NSWindow = {
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1, height: 1), styleMask: .borderless, backing: .buffered, defer: true)
+        w.backgroundColor = .clear
+        w.isOpaque = false
+        w.hasShadow = false
+        w.ignoresMouseEvents = true
+        w.level = .statusBar
+        w.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        return w
+    }()
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        item.button?.image = NSImage(systemSymbolName: "terminal", accessibilityDescription: "Cue")
+        item.button?.imagePosition = .imageLeading
+        item.button?.target = self
+        item.button?.action = #selector(clicked)
+        self.item = item
+
+        let host = NSHostingController(rootView: PopoverView().environmentObject(model))
+        host.sizingOptions = .preferredContentSize
+        popover.contentViewController = host
+        popover.behavior = .transient
+        popover.delegate = self
+
+        count = model.$sessions.sink { [weak self] _ in
+            DispatchQueue.main.async {
+                guard let self, let button = self.item?.button else { return }
+                let n = self.model.waiting
+                button.title = n > 0 ? " \(n)" : ""
+            }
         }
-        .menuBarExtraStyle(.window)
+        hotKey = HotKey(keyCode: UInt32(kVK_Space), modifiers: UInt32(controlKey | optionKey)) { [weak self] in self?.toggle() }
+    }
+
+    @objc private func clicked() {
+        // A click on the icon closes the transient popover first, then lands here: don't reopen it.
+        if Date().timeIntervalSince(closedAt) > 0.3 { toggle() }
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        closedAt = Date()
+        anchor.orderOut(nil)
+    }
+
+    func toggle() {
+        if popover.isShown {
+            popover.performClose(nil)
+            return
+        }
+        guard let button = item?.button, let bar = button.window else { return }
+        model.resort()
+        // An app without a Dock icon has to activate itself, or the text areas won't take keys.
+        NSApp.activate(ignoringOtherApps: true)
+        // A hidden menubar (a full-screen app, or auto-hide) leaves the icon above the screen, and NSPopover
+        // closes the moment it resizes against an offscreen anchor. Point at the screen's top edge instead.
+        let screen = NSScreen.screens.first { $0.frame.minX <= bar.frame.midX && bar.frame.midX < $0.frame.maxX } ?? NSScreen.main
+        if let screen, bar.frame.minY >= screen.frame.maxY - 1, let view = anchor.contentView {
+            anchor.setFrame(NSRect(x: bar.frame.midX, y: screen.frame.maxY - 1, width: 1, height: 1), display: false)
+            anchor.orderFrontRegardless()
+            popover.show(relativeTo: view.bounds, of: view, preferredEdge: .minY)
+        } else {
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        }
+        popover.contentViewController?.view.window?.makeKey()
     }
 }
 
@@ -97,6 +171,11 @@ final class Model: ObservableObject {
         }.map(\.sessionId)
         hooksInstalled = Self.hooksPresent()
         recheckStale()
+    }
+
+    /// Whether you can type a prompt in this row right now.
+    func canType(_ s: Session) -> Bool {
+        s.deliverable && !busy.contains(s.rowKey) && (!s.isClaude || s.status != "needs_you")
     }
 
     /// A row quiet at working for 15 s gets one look at its screen.
@@ -257,6 +336,7 @@ struct PopoverView: View {
                 Label(model.hooksInstalled ? "Hooks installed" : "Hooks missing",
                       systemImage: model.hooksInstalled ? "checkmark.circle" : "exclamationmark.triangle")
                 Spacer()
+                Text("⌃⌥Space opens Cue")
                 Button("Quit") { NSApp.terminate(nil) }.buttonStyle(.borderless)
             }
             .font(.caption)
@@ -265,13 +345,18 @@ struct PopoverView: View {
             .padding(.vertical, 8)
         }
         .frame(width: 380)
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in model.resort() }
+        // Each open puts the cursor in the first row you can type in: after sorting, the longest wait.
+        .onReceive(NotificationCenter.default.publisher(for: NSPopover.didShowNotification)) { _ in
+            focused = model.rows.first(where: model.canType)?.sessionId
+        }
     }
+
+    @FocusState private var focused: String?
 
     private var rowList: some View {
         VStack(spacing: 0) {
             ForEach(model.rows, id: \.sessionId) { s in
-                RowView(session: s)
+                RowView(session: s, focus: $focused)
                 Divider()
             }
         }
@@ -281,14 +366,15 @@ struct PopoverView: View {
 struct RowView: View {
     @EnvironmentObject var model: Model
     let session: Session
-    @FocusState private var editing: Bool
+    var focus: FocusState<String?>.Binding
 
     var body: some View {
         let key = session.rowKey
         let target = session.deliverable
         // Codex and Amp hold a prompt until the running turn ends; typing into Claude's tab needs it idle.
         let queues = !session.isClaude
-        let canType = target && !model.busy.contains(key) && (queues || session.status != "needs_you")
+        let canType = model.canType(session)
+        let editing = focus.wrappedValue == session.sessionId
         let draft = Binding(get: { model.drafts[key, default: ""] }, set: { model.drafts[key] = $0 })
         let canSend = canType && (queues || session.status == "idle") && !Delivery.sanitize(draft.wrappedValue).isEmpty
 
@@ -303,7 +389,7 @@ struct RowView: View {
                     .font(.callout).foregroundStyle(.secondary).lineLimit(2)
             }
             PromptEditor(text: draft, placeholder: placeholder(target), enabled: canType)
-                .focused($editing)
+                .focused(focus, equals: session.sessionId)
             HStack(spacing: 6) {
                 if canType { Text("⌘↩ to send").font(.caption).foregroundStyle(.secondary) }
                 Spacer()
