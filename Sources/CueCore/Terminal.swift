@@ -158,6 +158,8 @@ package struct TmuxPane: Terminal {
             apps.append(.pid(pid))
             pid = p.ppid
         }
+        // The client just exited (its window closed), so no process is left to bring forward.
+        guard !apps.isEmpty else { throw .failed("Couldn't find the terminal app showing this tmux session") }
         return apps
     }
 

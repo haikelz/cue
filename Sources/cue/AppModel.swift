@@ -108,7 +108,10 @@ final class AppModel {
             case .pid(let pid): NSRunningApplication(processIdentifier: pid)
             case .bundle(let id): NSRunningApplication.runningApplications(withBundleIdentifier: id).first
             }
-            if let running, running.activationPolicy == .regular { return running.activate() }
+            if let running, running.activationPolicy == .regular {
+                running.activate()  // macOS may decline: the app was found all the same
+                return true
+            }
         }
         return false
     }
