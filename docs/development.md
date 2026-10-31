@@ -4,14 +4,25 @@
 
 | Path | Purpose |
 | --- | --- |
-| `Sources/main.swift` | Picks the mode (app, `hook`, `send`, `selftest`, `codex-health`) before AppKit loads |
-| `Sources/Session.swift` | Session model, file store, lock, config, `sysctl` process facts, Claude interrupt detection |
-| `Sources/Hook.swift` | Hook mode for Claude Code and Codex: event to status, notification output, Codex originator check and hook health |
-| `Sources/Delivery.swift` | Sending: Claude typing with its checks (iTerm2 and tmux), `codex queue`, the process runner, the `send` command |
-| `Sources/Inbox.swift` | The app's half of the Amp inbox: drop, receipt, withdraw |
-| `Sources/App.swift` | Menubar app: status item, popover, model, rows |
-| `Sources/HotKey.swift` | The ⌃⌥Space global shortcut |
-| `Sources/SelfTest.swift` | Asserts for the pure functions, using real screen captures |
+| `Package.swift` | The `CueCore` library, the `cue` executable and the `CueCoreTests` suites, in Swift 6 language mode |
+| `Sources/CueCore/Session.swift` | `Session`, and the `Agent` and `Status` enums: the rules that differ between agents, liveness, Claude interrupt detection |
+| `Sources/CueCore/Store.swift` | The session files, the lock, and `config.json` |
+| `Sources/CueCore/Proc.swift` | Process facts from `sysctl` |
+| `Sources/CueCore/Hook.swift` | Hook mode for Claude Code and Codex: event to status, notification output |
+| `Sources/CueCore/Codex.swift` | `codex queue`, which Codex sessions are interactive, and the hook health check |
+| `Sources/CueCore/Delivery.swift` | Sending: the agent switch, Claude typing with its checks, `sanitize`, key chunks, `DeliveryError` |
+| `Sources/CueCore/Terminal.swift` | The `Terminal` protocol and its two terminals, `ITermTab` (AppleScript) and `TmuxPane` (tmux CLI) |
+| `Sources/CueCore/Inbox.swift` | The app's half of the Amp inbox: drop, receipt, withdraw |
+| `Sources/CueCore/Command.swift` | The process runner, with a timeout and a typed error |
+| `Sources/cue/main.swift` | Picks the mode (app, `hook`, `send`, `codex-health`) before AppKit loads |
+| `Sources/cue/AppDelegate.swift` | The scene, the menubar item, the popover and the hotkey wiring |
+| `Sources/cue/SessionMonitor.swift` | Reads the session files every second: liveness, expiry, interrupt repair, the hook checks |
+| `Sources/cue/AppModel.swift` | The popover's state: sort order, one `RowState` per row, sending and confirmation |
+| `Sources/cue/Worker.swift` | A serial queue behind an async API, for blocking calls |
+| `Sources/cue/PopoverView.swift`, `RowView.swift` | The SwiftUI views |
+| `Sources/cue/HotKey.swift` | The ⌃⌥Space global shortcut |
+| `Sources/cue/SendCommand.swift` | `cue send` |
+| `tests/CueCoreTests/` | swift-testing suites for CueCore, with real Claude Code screen captures |
 | `plugins/amp/cue.ts` | The Amp plugin; `drainInbox` is exported for the tests |
 | `Info.plist` | Bundle id, `LSUIElement`, the app icon, the Automation usage string |
 | `assets/` | The icon sources (`icon.svg`, `menubar.svg`), the generated `AppIcon.icns` and `menubar.tiff`, and `build.sh` |
@@ -47,10 +58,13 @@ Each `./install.sh` re-signs the app ad hoc, and macOS asks for Automation permi
 ## Tests
 
 ```sh
-tests/check.sh
+swift test        # CueCore's unit tests
+tests/check.sh    # those, then the built binary's behavior
 ```
 
-Runs `cue selftest`, then, with `CUE_DIR` set to a temp folder:
+`swift test` runs the swift-testing suites in `tests/CueCoreTests`: the screen checks against real Claude Code captures, `sanitize` and key chunks, the agent rules, liveness, the session file format, which terminal a session types into, Claude interrupt detection, and the Codex checks. The Command Line Tools include swift-testing, so Xcode isn't needed.
+
+`tests/check.sh` runs `swift test`, then, with `CUE_DIR` set to a temp folder:
 
 - every Claude Code and Codex status rule, file modes, malformed input, path-like ids, ten parallel hooks, and a 50 ms average per hook run;
 - the tmux fields a Claude hook records, an odd `$TMUX_PANE` rejected, and the fields cleared when a session leaves tmux;
@@ -97,8 +111,8 @@ Cue depends on behavior the agents don't promise. After an upgrade, run `tests/e
 | --- | --- | --- | --- |
 | Claude Code | The input box is a `❯` line in column 0 between two `─` rule lines | `Delivery.box` | `tests/iterm.sh screen <iterm-id>`, or `tmux capture-pane -p -t <pane>` |
 | Claude Code | The working spinner reads `✻ Word… (` right above the box | `Delivery.isSpinner` | Capture a tab while Claude works |
-| Claude Code | Input that arrives in a burst becomes `<pasted_content>` | Chunking in `Delivery.items` and `typeScript` | Send a long line, grep the transcript for `pasted_content` |
-| Claude Code | ESC + CR inserts a line break; Ctrl+U clears to line start | `typeScript`, send step 4 | Send a 3-line prompt over a draft |
+| Claude Code | Input that arrives in a burst becomes `<pasted_content>` | `Delivery.keys`, and the 150 ms gap in each `Terminal.send` | Send a long line, grep the transcript for `pasted_content` |
+| Claude Code | ESC + CR inserts a line break; Ctrl+U clears to line start | `Key`, send step 4 | Send a 3-line prompt over a draft |
 | Claude Code | Esc and denials write `[Request interrupted by user…]` | `Session.interrupted` | Interrupt a turn, read the transcript tail |
 | Claude Code | Hooks run as children of a process named `claude` | `Proc.claude()` | `ps -o pid,ppid,comm` from inside a hook |
 | Codex | Hook events and payload fields match the hooks docs, with `Interrupt` and `turn_id` | `Hook.handle` | Read `~/.cue/sessions/*.json` after a turn |
@@ -107,7 +121,12 @@ Cue depends on behavior the agents don't promise. After an upgrade, run `tests/e
 | Codex | `codex app-server` answers `hooks/list` with `command`, `enabled` and `trustStatus` per hook | `Codex.listHooks` | Untrust a Cue hook in `/hooks`, reopen the popover |
 | Amp | `amp.activeThread`, thread `state`, `appendUserMessage` and `agent.end` behave as the plugin API docs say | `plugins/amp/cue.ts` | `amp plugins show-docs`, then the e2e Amp part |
 
-Update the captures in `SelfTest.swift` when Claude Code's screen format changes, so the selftest tracks the real UI.
+Update the captures in `tests/CueCoreTests/ScreenTests.swift` when Claude Code's screen format changes, so the tests track the real UI.
+
+## Adding an agent or a terminal
+
+- **An agent:** add a case to `Agent` in `Session.swift`. The compiler then stops at every `switch` that needs it: the agent's name, its liveness, its delivery channel in `Delivery.send`, and its symbol in `RowView`. Rules shared by several agents are properties on `Agent`, such as `queuesWhileBusy` and `canOpen`.
+- **A terminal for Claude Code:** write a type that conforms to `Terminal` (read the screen, send key chunks, open), and return it from `Session.terminal` when the hook recorded what it needs. The safety checks in `Delivery` apply to it unchanged. Kitty (`kitty @ send-text`) and WezTerm (`wezterm cli send-text`) would fit this way.
 
 ## Adding a hook event
 

@@ -14,7 +14,7 @@ flowchart LR
     A -- "~/.cue/inbox/‹thread›/" --> P
 ```
 
-One binary does all of it. `main.swift` picks the mode before AppKit loads, which keeps a hook run near 6 ms:
+One binary does all of it. `main.swift` picks the mode before AppKit loads, which keeps a hook run near 6 ms. A word it doesn't know prints usage, so a mistyped command can't start a second copy of the app:
 
 | Invocation | Mode |
 | --- | --- |
@@ -22,7 +22,6 @@ One binary does all of it. `main.swift` picks the mode before AppKit loads, whic
 | `cue hook claude` | Handle one Claude Code hook event from stdin |
 | `cue hook codex` | Handle one Codex hook event from stdin; always prints JSON |
 | `cue send <session-id> <text>` | The app's send path from the command line |
-| `cue selftest` | Asserts for the safety-critical pure functions |
 | `cue codex-health [cue path]` | The footer's Codex hook check: `ok`, the warning, or `no answer` |
 
 ## Agents at a glance
@@ -186,11 +185,28 @@ The plugin checks each inbox file before trusting it: a name of the form `<uuid>
 
 An `NSStatusItem` with an `NSPopover` holds the UI; SwiftUI's `MenuBarExtra` can't open from code, which the hotkey needs. ⌃⌥Space comes from Carbon's `RegisterEventHotKey`, which needs no Accessibility permission. Each time the popover opens, the app re-sorts the rows and puts the cursor in the first row you can type in. Only the row being edited owns ⌘Return, and one reply expands at a time.
 
+## Code structure
+
+Two targets build one binary. `CueCore` imports Foundation only and holds everything that isn't UI: sessions, the store, hooks, delivery and the terminals. The `cue` executable adds the command line and the app. The tests in `tests/CueCoreTests` cover CueCore.
+
+| Layer | Types | Role |
+| --- | --- | --- |
+| Domain | `Session`, `Agent`, `Status` | One session as its file stores it; each agent's rules in one enum |
+| Storage | `Store`, `Config`, `Proc` | Session files, the lock, install-time paths, process facts |
+| Reporting | `Hook` | Turns a hook event into a session file update |
+| Delivery | `Delivery`, `Terminal` (`ITermTab`, `TmuxPane`), `Codex`, `Inbox` | Sends a prompt through the session's agent; Claude's safety checks run once, on any `Terminal` |
+| App | `SessionMonitor`, `AppModel`, `Worker` | Polls the files and repairs rows; holds what the popover shows; runs blocking calls |
+| UI | `AppDelegate`, `PopoverView`, `RowView` | The menubar item, the popover, a row |
+
+The app follows a plain Model–View shape: two `@Observable` models on the main actor, and SwiftUI views that read `AppModel` from the environment. `SessionMonitor` owns the session list and the background checks; `AppModel` owns UI state, one `RowState` per row (draft, note, sending, pending confirmation). Delivery steps throw a typed `DeliveryError` (`closed`, `moved`, `refused`, `failed`), and `Delivery` turns it into the row's `Outcome`.
+
 ## Concurrency
 
 - **Writes** go to a temp file and `rename(2)`, so readers never see half a file. The Amp plugin writes the same way.
 - **One lock** (`~/.cue/.lock`, `flock`) serializes every read-modify-write by hooks and the app. The Amp plugin is the only writer of its session file, so it doesn't take the lock.
-- **Blocking calls** (AppleScript, tmux, `codex queue`) run one at a time on a serial dispatch queue, off the main thread. Probes for the same row don't stack. The Codex `hooks/list` check runs on a separate background queue, so it never delays a send.
+- **Swift 6 language mode** checks data races at compile time. The models and views run on the main actor; the shared value types are `Sendable`.
+- **Blocking calls** (AppleScript, tmux, `codex queue`) run one at a time on `Worker`, a serial queue behind an `async` API, off the main thread and off Swift's task pool, which blocking calls would starve. Probes for the same row don't stack. The Codex `hooks/list` check runs on a second `Worker`, so it never delays a send.
+- **Polling** is a `Task` loop on the main actor: every second it rereads the session files and settles prompts waiting for confirmation.
 
 ## Settings install and uninstall
 
