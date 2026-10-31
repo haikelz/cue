@@ -230,7 +230,8 @@ enum Delivery {
         p.standardError = errors
         do { try p.run() } catch { return .failure(ScriptError(message: "\(exe): \(error.localizedDescription)")) }
         DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { if p.isRunning { p.terminate() } }
-        if let input { stdin.fileHandleForWriting.write(Data(input.utf8)) }
+        // The throwing write: a child that exits before reading must not raise an exception here.
+        if let input { try? stdin.fileHandleForWriting.write(contentsOf: Data(input.utf8)) }
         try? stdin.fileHandleForWriting.close()
         let out = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
         let err = String(decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
