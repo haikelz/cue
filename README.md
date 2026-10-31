@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/icon.svg" width="128" height="128" alt="Cue's icon: a white C on a dark rounded square, with an amber text cursor in its opening">
+  <img src="assets/icon.svg" width="128" height="128" alt="Cue's icon: two stacked session windows on a dark rounded square, a prompt in the front one, and an amber dot for the session waiting on you">
 </p>
 
 <h1 align="center">Cue</h1>
@@ -7,7 +7,7 @@
 A macOS menubar app for people who run many coding agents at once. Cue lists your Claude Code, Codex and Amp sessions with their status and last reply, and you send any of them its next prompt without hunting for its terminal window. Press ⌃⌥Space from any app to open it.
 
 <p align="center">
-  <img src="docs/images/popover.png" width="380" alt="Cue's popover with three sessions: an idle Claude Code session with a two-line prompt drafted in its text area, an idle Amp thread, and a working Codex session that queues prompts">
+  <img src="docs/images/popover.png" width="380" alt="Cue's popover with three sessions: a Claude Code session that needs you in the terminal, an idle Claude Code session with a prompt drafted in its text area, and a working Codex session that queues prompts">
 </p>
 
 | | Claude Code | Codex | Amp |

@@ -1,12 +1,12 @@
 # User guide
 
-Cue lives in the menubar. Click its icon, a C with a text cursor in its opening, or press **⌃⌥Space** from any app, to open the popover. Find the session you want, type its next prompt, and press **⌘Return**.
+Cue lives in the menubar. Click its icon, two stacked windows with a dot, or press **⌃⌥Space** from any app, to open the popover. Find the session you want, type its next prompt, and press **⌘Return**.
 
 ## The menubar icon
 
 <img src="../assets/icon.svg" width="64" height="64" alt="Cue's app icon" align="right">
 
-The icon is Cue's mark: a C for Cue, with the cursor where your next prompt goes. It follows the menubar's light or dark look, and shows a count when one or more sessions are idle or need you. No count means every session is working, or none is running.
+The icon is Cue's mark: your agent sessions stacked like windows, with a dot for the one waiting on you. It follows the menubar's light or dark look, and shows a count when one or more sessions are idle or need you. No count means every session is working, or none is running.
 
 ## The popover
 
@@ -18,16 +18,16 @@ The popover lists one row per session: Claude Code sessions, Codex sessions, and
 
 Rows keep their places while the popover stays open, so a row never moves under your cursor. Past three sessions, the list scrolls. The cursor starts in the first row you can type in, which is the session that has waited longest.
 
-Each row shows:
+The header shows a count such as "2 waiting · 1 working". Each session is a rounded tile that shows:
 
-- **Agent and project**: for example `Codex · billing`. The project is the last folder of the session's working directory. Two sessions of one agent in one folder get a short id suffix.
-- **Status badge**: the status and the time since it last changed, for example `Idle · 3m`.
+- **Agent and project**: the agent's symbol, then for example `Codex · billing`. The project is the last folder of the session's working directory. Two sessions of one agent in one folder get a short id suffix.
+- **Status**: a colored dot, or a spinner while the agent works, then the status and the time since it last changed, for example `Idle · 3m`.
 - **Last message**: the first two lines of the agent's final reply. Click it to read all of it, with line breaks, bold, code and links, and text you can select and copy. A long reply scrolls; **Show less** folds it again. One reply opens at a time.
-- **Prompt box**: a text area four lines tall; a longer prompt scrolls inside it.
-- **Send**, and **Open** for Claude Code and Amp rows.
+- **Prompt box**: a text area four lines tall; a longer prompt scrolls inside it. A Claude Code row that needs you, or one outside iTerm2 and tmux, shows a line saying so instead, with an **Open** button.
+- **Send**, and the **Open** arrow for Claude Code and Amp rows.
 - **A note** under the prompt box when something needs your attention. See [Row messages](#row-messages).
 
-The footer shows whether Cue's hooks are installed, a reminder of ⌃⌥Space, and the Quit button. Above it, a warning appears when Codex won't run Cue's hooks:
+The footer shows whether Cue's hooks are installed, a reminder of ⌃⌥Space, and the Quit button (⌘Q). Above it, an orange banner appears when Codex won't run Cue's hooks:
 
 | Warning | What to do |
 | --- | --- |
@@ -36,7 +36,7 @@ The footer shows whether Cue's hooks are installed, a reminder of ⌃⌥Space, a
 
 ### Statuses
 
-| Badge | Claude Code | Codex and Amp |
+| Status | Claude Code | Codex and Amp |
 | --- | --- | --- |
 | Idle | Send enabled | Send enabled |
 | Working | Draft ahead; Send waits for idle | Send queues the prompt behind the running turn |
@@ -47,7 +47,7 @@ Claude Code drafts follow the iTerm2 tab or tmux pane, so a draft survives `/cle
 
 ## Sending a prompt
 
-Type in the prompt box. **Return** adds a line break; **⌘Return** or the **Send** button sends. The Send button of the row you're typing in turns blue, since it's the one ⌘Return triggers. Each agent takes the prompt its own way.
+Type in the prompt box. **Return** adds a line break; **⌘Return** or the **Send** button sends. The row you're typing in shows the accent focus ring and a "⌘↩ to send" hint, since its Send button is the one ⌘Return triggers. Each agent takes the prompt its own way.
 
 **Claude Code.** Cue types into the session's iTerm2 tab, or into its tmux pane when Claude runs inside tmux. tmux works the same in Ghostty, Kitty, WezTerm, Terminal.app or any other terminal, and needs no macOS permission. Before typing anything, Cue checks that the session is idle, that its Claude process runs in the foreground of that tab or pane, and that Claude's input box sits on screen with no spinner above it. Then it:
 
