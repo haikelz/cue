@@ -3,8 +3,11 @@ import Foundation
 import Testing
 
 /// Which Codex sessions get rows, and the footer's hook check.
-@Suite struct CodexTests {
+/// A class, so deinit can remove the folder: swift-testing makes one instance per test.
+@Suite final class CodexTests {
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent("cue-tests-\(UUID().uuidString)")
+
+    deinit { try? FileManager.default.removeItem(at: dir) }
 
     func rollout(_ originator: String) -> String {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

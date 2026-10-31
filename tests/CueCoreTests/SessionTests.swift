@@ -93,8 +93,11 @@ import Testing
         #expect(!Inbox.validThread("T-../../etc"))
     }
 
-    @Suite struct Interrupts {
+    /// A class, so deinit can remove the folder: swift-testing makes one instance per test.
+    @Suite final class Interrupts {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("cue-tests-\(UUID().uuidString)")
+
+        deinit { try? FileManager.default.removeItem(at: dir) }
         let marker = #"{"type":"user","message":{"content":[{"type":"text","text":"[Request interrupted by user for tool use]"}]}}"#
         let meta = #"{"type":"permission-mode","permissionMode":"default"}"#
         let reply = #"{"type":"assistant","message":{"content":[{"type":"text","text":"Done."}]}}"#
