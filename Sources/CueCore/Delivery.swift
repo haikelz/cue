@@ -35,11 +35,13 @@ package enum Delivery {
         }
     }
 
-    /// Types the prompt into the session's iTerm2 tab or tmux pane, then presses Return, each step behind the full set of checks.
-    static func typeIntoClaude(_ s: Session, _ text: String) -> Outcome {
-        guard let terminal = s.terminal, let tty = s.tty else { return .refused("Not in iTerm2 or tmux") }
+    /// Types the prompt into the session's iTerm2 tab or tmux pane, then presses Return, each step behind
+    /// the full set of checks. The tests pass their own terminal and gate.
+    static func typeIntoClaude(_ s: Session, _ text: String, on terminal: (any Terminal)? = nil,
+                               gate: (Session) -> String? = liveGate) -> Outcome {
+        guard let terminal = terminal ?? s.terminal, let tty = s.tty else { return .refused("Not in iTerm2 or tmux") }
         let lines: [String]
-        do { lines = try check(s) } catch { return .refused(error.message) }
+        do { lines = try check(s, on: terminal, tty: tty, gate: gate) } catch { return .refused(error.message) }
 
         // A draft or a grayed-out suggestion sits in the box: Ctrl+U clears it, once per box line.
         // A real draft stays recoverable with Ctrl+Y in that tab.
@@ -57,7 +59,7 @@ package enum Delivery {
         // Typing a long prompt takes seconds. Before Return, check everything again, and check the box
         // ends with this prompt (a long draft scrolls inside the box, so its start may be out of view).
         do {
-            guard box(try check(s), endsWith: text) else {
+            guard box(try check(s, on: terminal, tty: tty, gate: gate), endsWith: text) else {
                 return .failed("Typed but not sent: the input box doesn't end with this prompt")
             }
         } catch {
@@ -73,13 +75,16 @@ package enum Delivery {
 
     /// Every check that guards typing, process facts first, then what the terminal shows. Returns the
     /// input box's lines.
-    static func check(_ s: Session) throws(DeliveryError) -> [String] {
-        if let why = gate(Store.read(s.sessionId) ?? s) { throw .refused(why) }
-        guard let terminal = s.terminal, let tty = s.tty else { throw .refused("Not in iTerm2 or tmux") }
+    static func check(_ s: Session, on terminal: any Terminal, tty: String,
+                      gate: (Session) -> String?) throws(DeliveryError) -> [String] {
+        if let why = gate(s) { throw .refused(why) }
         let text = try terminal.screen(tty: tty, timeout: 60)
         if let why = screenProblem(text) { throw .refused(why) }
         return box(text)?.lines ?? []
     }
+
+    /// The gate on the session file as it is now: the hooks may have changed it since the row was read.
+    static func liveGate(_ s: Session) -> String? { gate(Store.read(s.sessionId) ?? s) }
 
     /// Process checks, cheapest first. Returns why typing must not happen, or nil.
     static func gate(_ s: Session) -> String? {
