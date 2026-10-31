@@ -48,10 +48,10 @@ rm -rf "$APP.old"
 
 mkdir -p "$CUE_DIR"
 chmod 700 "$CUE_DIR"
-# The absolute codex path and this shell's PATH: `codex queue` may start Codex's daemon, which
-# inherits the PATH Cue gives it, and your Codex hooks need theirs (node, for one).
-jq -n --arg codex "$(command -v codex || true)" --arg path "$PATH" \
-  '{codex: (if $codex == "" then null else $codex end), path: $path}' > "$CUE_DIR/config.json"
+# The absolute codex and tmux paths and this shell's PATH: `codex queue` may start Codex's daemon,
+# which inherits the PATH Cue gives it, and your Codex hooks need theirs (node, for one).
+jq -n --arg codex "$(command -v codex || true)" --arg tmux "$(command -v tmux || true)" --arg path "$PATH" \
+  '{codex: (if $codex == "" then null else $codex end), tmux: (if $tmux == "" then null else $tmux end), path: $path}' > "$CUE_DIR/config.json"
 chmod 600 "$CUE_DIR/config.json"
 
 # Claude Code: Claude Relay's hooks out and Cue's in, in one write, before the old app goes away.

@@ -238,10 +238,9 @@ final class Model: ObservableObject {
     }
 
     func open(_ s: Session) {
-        guard let sid = s.itermSessionId else { return }
         let key = s.rowKey
         worker.async {
-            let error = Delivery.open(itermSessionId: sid)
+            let error = Delivery.open(s)
             DispatchQueue.main.async { self.notes[key] = error }
         }
     }
@@ -431,7 +430,7 @@ struct RowView: View {
                     .disabled(!canSend)
                     .keyboardShortcut(editing ? KeyboardShortcut(.return, modifiers: .command) : nil)
                 if session.agent != "codex" {  // Codex hooks run in its daemon, so the tab is unknown
-                    Button("Open") { model.open(session) }.disabled(session.itermSessionId == nil)
+                    Button("Open") { model.open(session) }.disabled(session.itermSessionId == nil && session.tmuxPane == nil)
                 }
             }
             if let note = model.notes[key] {
@@ -442,7 +441,7 @@ struct RowView: View {
     }
 
     private func placeholder(_ target: Bool) -> String {
-        if !target { return "Not in iTerm2" }
+        if !target { return "Start Claude in iTerm2 or tmux to send from here" }
         if session.isClaude { return session.status == "needs_you" ? "Answer in terminal" : "Next prompt" }
         return session.status == "idle" ? "Next prompt" : "Queue a prompt"
     }
@@ -528,7 +527,7 @@ struct StatusBadge: View {
         case "idle": ("Idle", .green)
         case "needs_you": ("Needs you", .orange)
         case "working": ("Working", .blue)
-        default: ("Not in iTerm2", .gray)
+        default: ("Read only", .gray)
         }
         TimelineView(.periodic(from: .now, by: 1)) { _ in Text("\(label) · \(ago)") }
             .font(.caption)

@@ -86,6 +86,12 @@ enum SelfTest {
         check("path-like Amp thread id rejected", !Inbox.validThread("T-../../etc"))
         let tab = "64017D0C-B0FE-457C-A404-FFB5514233B0"
         check("Claude rows key by tab", Session(sessionId: "c", agent: "claude", cwd: "/", status: "idle", updatedAt: 0, itermSessionId: tab).rowKey == tab)
+        let paned = Session(sessionId: "c", agent: "claude", cwd: "/", status: "idle", updatedAt: 0, tty: "/dev/ttys009",
+                            tmuxSocket: "/tmp/tmux-501/default", tmuxPane: "%3")
+        check("Claude rows in tmux key by pane", paned.rowKey == "/tmp/tmux-501/default%3")
+        check("Claude rows in tmux are deliverable", paned.deliverable)
+        check("Claude rows outside iTerm2 and tmux are read only",
+              !Session(sessionId: "c", agent: "claude", cwd: "/", status: "idle", updatedAt: 0, tty: "/dev/ttys009").deliverable)
         check("Amp rows key by thread", Session(sessionId: "T-x", agent: "amp", cwd: "/", status: "idle", updatedAt: 0, itermSessionId: tab).rowKey == "T-x")
 
         print(fails == 0 ? "selftest passed" : "\(fails) selftest check(s) failed")

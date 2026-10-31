@@ -1,7 +1,8 @@
 #!/bin/zsh
-# End-to-end: real Claude Code, Amp and Codex sessions in new iTerm2 windows, prompts sent through
-# `cue send`. Costs a few small model calls. Needs iTerm2, claude and jq; Amp and Codex parts run
-# when ./install.sh has wired them in (Codex also needs Cue's hooks trusted in /hooks).
+# End-to-end: real Claude Code, Amp and Codex sessions in new iTerm2 windows, and Claude Code in a
+# detached tmux session, prompts sent through `cue send`. Costs a few small model calls. Needs iTerm2,
+# claude and jq; the tmux part needs tmux; Amp and Codex parts run when ./install.sh has wired them in
+# (Codex also needs Cue's hooks trusted in /hooks).
 set -u
 setopt null_glob
 zmodload zsh/datetime
@@ -101,6 +102,66 @@ check "send to closed tab refused" "$([[ $out == "Claude process is gone" || $ou
 
 $T close $sidB > /dev/null
 rm -f $SESSIONS/$A.json $SESSIONS/$B.json
+
+# 6b. tmux: Claude Code in a detached tmux session, the path for Ghostty, Kitty, WezTerm and Terminal.app.
+if command -v tmux > /dev/null; then
+  mkdir -p $W/tmux
+  tx() { tmux -S $W/tmux.sock "$@"; }
+  tx new-session -d -s cue-e2e -x 120 -y 40 -c $W/tmux
+  pane=$(tx display-message -p -t cue-e2e '#{pane_id}')
+  tx send-keys -t $pane "claude --settings $W/settings.json" Enter
+  pane_session() { jq -r --arg p "$pane" --arg s "$W/tmux.sock" 'select(.tmux_pane == $p and .tmux_socket == $s) | .session_id' $SESSIONS/*.json 2>/dev/null | head -1; }
+  P=""
+  for i in {1..60}; do
+    screen=$(tx capture-pane -p -t $pane)
+    if [[ $screen == *"Yes, I trust this folder"* ]]; then tx send-keys -t $pane Down; sleep 0.3; tx send-keys -t $pane Enter
+    elif [[ $screen == *"new MCP servers found"* ]]; then tx send-keys -t $pane Escape
+    fi
+    P=$(pane_session); [[ -n $P ]] && break
+    sleep 0.5
+  done
+  check "tmux session registered" "$([[ -n $P ]] && print yes)" yes
+  if [[ -n $P ]]; then
+    sleep 2
+    check "tmux row has no iTerm2 tab" "$(field $P iterm_session_id)" null
+    check "tmux send confirmed" "$($BIN send $P 'Reply with the single word TMUXED and nothing else')" confirmed
+    wait_for 60 '[[ $(field $P status) == idle ]]'
+    check "Claude in tmux answered" "$(field $P last_message)" TMUXED
+
+    # Copy mode reads keys as tmux commands; synchronized panes copy them to every pane in the window.
+    tx copy-mode -t $pane
+    check "tmux send refused in copy mode" "$($BIN send $P 'nope' 2>&1)" "tmux pane is in copy mode; press q in it"
+    tx send-keys -X -t $pane cancel
+    tx set-window-option -t $pane synchronize-panes on
+    check "tmux send refused with synchronized panes" "$($BIN send $P 'nope' 2>&1)" "tmux panes are synchronized; turn synchronize-panes off"
+    tx set-window-option -t $pane synchronize-panes off
+
+    # A draft is cleared, a line ending in ";" survives tmux, and the line break stays a line break.
+    tx send-keys -t $pane -l 'half typed draft'; sleep 0.5
+    text="First line ends with a semicolon;
+Second line: reply with the number of lines in this message and nothing else."
+    check "tmux multi-line send confirmed" "$($BIN send $P $text)" confirmed
+    wait_for 60 '[[ $(field $P status) == idle ]]'
+    check "two lines counted" "$(field $P last_message)" 2
+    prompt=$(grep '"type":"user"' "$(field $P transcript_path)" | tail -1 | jq -r '.message.content | if type == "string" then . else .[0].text end')
+    check "tmux prompt arrived exactly" "$prompt" "$text"
+
+    tx send-keys -t $pane C-z; sleep 1.5
+    check "tmux send refused while suspended" "$($BIN send $P 'nope' 2>&1)" "Claude isn't in the foreground (suspended?)"
+    tx send-keys -t $pane fg Enter; sleep 2
+    check "no stray text in the pane" "$(tx capture-pane -p -t $pane | grep -c nope)" 0
+
+    # The row may outlive its pane for a moment; put it back as if the app hadn't caught up yet.
+    # A running Cue app may delete it again first, which is a refusal too.
+    cp $SESSIONS/$P.json $W/tmux-row.json; tx kill-server; sleep 1; cp $W/tmux-row.json $SESSIONS/$P.json
+    out=$($BIN send $P 'nope' 2>&1)
+    check "send to a closed pane refused" "$([[ $out == "Claude process is gone" || $out == "tmux pane is closed" || $out == "Session is gone" ]] && print refused)" refused
+    rm -f $SESSIONS/$P.json
+  fi
+  tx kill-server 2> /dev/null
+else
+  print "skip  tmux: install tmux"
+fi
 
 # 7. Amp: the plugin lists the thread you have open and delivers through the inbox.
 if command -v amp > /dev/null && cmp -s plugins/amp/cue.ts ~/.config/amp/plugins/cue.ts; then

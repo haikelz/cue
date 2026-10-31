@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 
 enum Outcome {
     case sent(at: Double)  // the turn should start; `last_prompt_at` confirms it
@@ -41,9 +41,9 @@ enum Delivery {
         }
     }
 
-    /// Types the prompt into the session's iTerm2 tab, then presses Return, each step behind the full set of checks.
+    /// Types the prompt into the session's iTerm2 tab or tmux pane, then presses Return, each step behind the full set of checks.
     static func typeIntoClaude(_ s: Session, _ text: String) -> Outcome {
-        guard let sid = s.itermSessionId, let tty = s.tty else { return .refused("Not in iTerm2") }
+        guard s.deliverable, let tty = s.tty else { return .refused("Not in iTerm2 or tmux") }
 
         let screen: Screen
         switch check(s) {
@@ -55,11 +55,18 @@ enum Delivery {
         // A real draft stays recoverable with Ctrl+Y in that tab.
         let clears = screen.box.first.map { $0 == "❯" || $0.hasPrefix("❯ Try \"") } == true ? 0 : screen.box.count
         let at = Date().timeIntervalSince1970
-        switch osascript(typeScript, [sid, tty, String(clears)] + items(text)) {
+        let typed: Result<String, ScriptError>
+        if let pane = Tmux(s) {
+            let bytes = items(text).map { $0 == "\u{1}" ? [0x1B, 0x0D] : Array($0.utf8) }
+            typed = pane.type(tty: tty, Array(repeating: [0x15], count: clears) + bytes)
+        } else {
+            typed = osascript(typeScript, [s.itermSessionId ?? "", tty, String(clears)] + items(text))
+        }
+        switch typed {
         case .failure(let e): return .failed(e.message)
         case .success("ok"): break
-        case .success("missing"): return .failed("iTerm2 tab is closed")
-        case .success("tty-changed"): return .refused("Tab no longer runs this session")
+        case .success("missing"): return .failed(closed(s))
+        case .success("tty-changed"): return .refused(moved(s))
         case .success(let other): return .failed("iTerm2 replied: \(other)")
         }
 
@@ -67,15 +74,15 @@ enum Delivery {
         // ends with this prompt (a long draft scrolls inside the box, so its start may be out of view).
         switch check(s) {
         case .failure(let why):
-            return .failed("Typed but not sent: \(why.message). The text is in the tab's input box")
+            return .failed("Typed but not sent: \(why.message). The text is in Claude's input box")
         case .success(let after):
             guard box(after.box, endsWith: text) else {
                 return .failed("Typed but not sent: the input box doesn't end with this prompt")
             }
         }
-        switch osascript(returnScript, [sid, tty]) {
+        switch Tmux(s).map({ $0.type(tty: tty, [[0x0D]]) }) ?? osascript(returnScript, [s.itermSessionId ?? "", tty]) {
         case .success("ok"): return .sent(at: at)
-        case .success(let other): return .failed("Typed but not sent: iTerm2 replied \(other)")
+        case .success(let other): return .failed("Typed but not sent: \(other)")
         case .failure(let e): return .failed("Typed but not sent: \(e.message)")
         }
     }
@@ -86,18 +93,27 @@ enum Delivery {
     /// Every check that guards typing: process facts first, then what the tab shows.
     static func check(_ s: Session) -> Result<Screen, Refusal> {
         if let why = gate(Store.read(s.sessionId) ?? s) { return .failure(Refusal(message: why)) }
-        guard let sid = s.itermSessionId else { return .failure(Refusal(message: "Not in iTerm2")) }
-        switch osascript(probeScript, [sid]) {
+        switch probe(s) {
         case .failure(let e): return .failure(Refusal(message: e.message))
         case .success(let out):
-            guard out != "missing" else { return .failure(Refusal(message: "iTerm2 tab is closed")) }
+            guard out != "missing" else { return .failure(Refusal(message: closed(s))) }
             let parts = out.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
-            guard parts.first.map(String.init) == s.tty else { return .failure(Refusal(message: "Tab no longer runs this session")) }
+            guard parts.first.map(String.init) == s.tty else { return .failure(Refusal(message: moved(s))) }
             let text = parts.count > 1 ? String(parts[1]) : ""
             if let why = screenProblem(text) { return .failure(Refusal(message: why)) }
             return .success(Screen(box: box(text)?.lines ?? []))
         }
     }
+
+    /// The tty line, then the visible screen; "missing" when the tab or pane is gone.
+    static func probe(_ s: Session, timeout: Double = 60) -> Result<String, ScriptError> {
+        if let pane = Tmux(s) { return pane.probe() }
+        guard let sid = s.itermSessionId else { return .failure(ScriptError(message: "Not in iTerm2 or tmux")) }
+        return osascript(probeScript, [sid], timeout: timeout)
+    }
+
+    static func closed(_ s: Session) -> String { s.tmuxPane == nil ? "iTerm2 tab is closed" : "tmux pane is closed" }
+    static func moved(_ s: Session) -> String { s.tmuxPane == nil ? "Tab no longer runs this session" : "Pane no longer runs this session" }
 
     /// Process checks, cheapest first. Returns why typing must not happen, or nil.
     static func gate(_ s: Session) -> String? {
@@ -156,7 +172,7 @@ enum Delivery {
     /// For a row stuck at working: true when the tab shows an idle input box. Catches Esc pressed
     /// before Claude wrote anything, which leaves no hook event and no transcript marker.
     static func looksIdle(_ s: Session) -> Bool {
-        guard let sid = s.itermSessionId, case .success(let out) = osascript(probeScript, [sid], timeout: 10) else { return false }
+        guard case .success(let out) = probe(s, timeout: 10) else { return false }
         let parts = out.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
         return parts.count == 2 && String(parts[0]) == s.tty && screenProblem(String(parts[1])) == nil
     }
@@ -195,7 +211,9 @@ enum Delivery {
         return out
     }
 
-    static func open(itermSessionId sid: String) -> String? {
+    static func open(_ s: Session) -> String? {
+        if let pane = Tmux(s) { return pane.open() }
+        guard let sid = s.itermSessionId else { return "Not in iTerm2 or tmux" }
         switch osascript(openScript, [sid], timeout: 10) {
         case .success("ok"): return nil
         case .success: return "iTerm2 tab is closed"
@@ -306,6 +324,100 @@ enum Delivery {
         activate
         return "ok"
         """)
+}
+
+/// A Claude session's tmux pane, driven through the tmux CLI, which needs no macOS permission.
+/// Keys go as raw bytes (`send-keys -H`), the same bytes the iTerm2 script writes; tmux would parse a
+/// text argument ending in ";" as a command separator.
+struct Tmux {
+    let socket: String, pane: String
+
+    init?(_ s: Session) {
+        guard let socket = s.tmuxSocket, let pane = s.tmuxPane else { return nil }
+        (self.socket, self.pane) = (socket, pane)
+    }
+
+    /// Replies "missing" when the pane or its server is gone.
+    func run(_ args: [String]) -> Result<String, Delivery.ScriptError> {
+        let exe = [Config.load().tmux, "/opt/homebrew/bin/tmux", "/usr/local/bin/tmux"].compactMap { $0 }
+            .first { FileManager.default.isExecutableFile(atPath: $0) }
+        guard let exe else { return .failure(.init(message: "Cue doesn't know where tmux is; run install.sh again")) }
+        switch Delivery.run(exe, ["-S", socket] + args, timeout: 10) {
+        case .failure(let e) where ["can't find", "no server", "error connecting"].contains(where: e.message.contains):
+            return .success("missing")
+        case .failure(let e) where e.message.hasPrefix("no answer"): return .failure(.init(message: "tmux didn't answer in 10 s"))
+        case let other: return other
+        }
+    }
+
+    /// The pane's tty, or "missing". Refuses copy mode, where tmux reads keys as its own commands (and
+    /// capture-pane still shows Claude's screen), and synchronized panes, where tmux copies keys to
+    /// every pane in the window.
+    func target() -> Result<String, Delivery.ScriptError> {
+        run(["display-message", "-p", "-t", pane, "#{pane_in_mode}#{pane_synchronized} #{pane_tty}"]).flatMap { out in
+            let f = out.split(separator: " ", maxSplits: 1)
+            guard f.count == 2 else { return .success("missing") }  // a gone pane prints nothing
+            if f[0].hasPrefix("1") { return .failure(.init(message: "tmux pane is in copy mode; press q in it")) }
+            if f[0].hasSuffix("1") { return .failure(.init(message: "tmux panes are synchronized; turn synchronize-panes off")) }
+            return .success(String(f[1]))
+        }
+    }
+
+    func probe() -> Result<String, Delivery.ScriptError> {
+        target().flatMap { tty in
+            tty == "missing" ? .success(tty) : run(["capture-pane", "-p", "-t", pane]).map { $0 == "missing" ? $0 : tty + "\n" + $0 }
+        }
+    }
+
+    /// Sends each chunk 150 ms apart once the pane still holds `tty`. Replies like the iTerm2 scripts:
+    /// ok, missing, tty-changed.
+    func type(tty: String, _ chunks: [[UInt8]]) -> Result<String, Delivery.ScriptError> {
+        switch target() {
+        case .failure(let e): return .failure(e)
+        case .success("missing"): return .success("missing")
+        case .success(let t) where t != tty: return .success("tty-changed")
+        default: break
+        }
+        for bytes in chunks {
+            switch run(["send-keys", "-t", pane, "-H"] + bytes.map { String(format: "%02x", $0) }) {
+            case .failure(let e): return .failure(e)
+            case .success("missing"): return .success("missing")
+            default: usleep(150_000)
+            }
+        }
+        return .success("ok")
+    }
+
+    /// Selects the pane in its window, then brings up the terminal app of the client you used last.
+    /// ponytail: the app comes forward with its own front window; with several windows, that may not be the one.
+    func open() -> String? {
+        switch run(["select-window", "-t", pane, ";", "select-pane", "-t", pane]) {
+        case .failure(let e): return e.message
+        case .success("missing"): return "tmux pane is closed"
+        default: break
+        }
+        guard case .success(let out) = run(["list-clients", "-t", pane, "-F", "#{client_activity} #{client_pid}"]),
+              let client = out.split(separator: "\n").compactMap({ line -> (Int, pid_t)? in
+                  let f = line.split(separator: " ")
+                  guard f.count == 2, let at = Int(f[0]), let pid = pid_t(f[1]) else { return nil }
+                  return (at, pid)
+              }).max(by: { $0.0 < $1.0 })
+        else { return "No terminal shows this tmux session; run tmux attach" }
+        var pid = client.1
+        for _ in 0..<12 {
+            guard let p = Proc(pid) else { break }
+            // iTerm2 runs shells under its iTermServer helper, whose parent is launchd rather than iTerm2.
+            let app = p.name.hasPrefix("iTermServer")
+                ? NSRunningApplication.runningApplications(withBundleIdentifier: "com.googlecode.iterm2").first
+                : NSRunningApplication(processIdentifier: pid)
+            if let app, app.activationPolicy == .regular {
+                app.activate()
+                return nil
+            }
+            pid = p.ppid
+        }
+        return "Couldn't find the terminal app showing this tmux session"
+    }
 }
 
 /// `cue send <session-id> <text>`: the app's delivery path, for tests and scripts.

@@ -13,6 +13,8 @@ struct Session: Codable, Equatable {
     var pidStart: Double?
     var tty: String?
     var itermSessionId: String?
+    var tmuxSocket: String?  // Claude inside tmux: the server's socket and the session's pane, typed into instead of iTerm2
+    var tmuxPane: String?
     var transcriptPath: String?
     var turnId: String?     // Codex: the turn UserPromptSubmit started
     var heartbeat: Double?  // Amp: the plugin rewrites this every 5 s
@@ -21,12 +23,12 @@ struct Session: Codable, Equatable {
 
     var agentName: String { ["claude": "Claude", "codex": "Codex", "amp": "Amp"][agent] ?? agent }
 
-    /// Claude rows follow the iTerm2 tab, so a draft survives /clear starting a new session.
+    /// Claude rows follow the iTerm2 tab or tmux pane, so a draft survives /clear starting a new session.
     /// Codex and Amp rows follow the session: several of their threads can share one tab.
-    var rowKey: String { isClaude ? (itermSessionId ?? sessionId) : sessionId }
+    var rowKey: String { isClaude ? (itermSessionId ?? tmuxPane.map { (tmuxSocket ?? "") + $0 } ?? sessionId) : sessionId }
 
-    /// Claude prompts are typed into an iTerm2 tab; Codex and Amp take them through their own channels.
-    var deliverable: Bool { !isClaude || (itermSessionId != nil && tty != nil) }
+    /// Claude prompts are typed into an iTerm2 tab or a tmux pane; Codex and Amp take them through their own channels.
+    var deliverable: Bool { !isClaude || tty != nil && (itermSessionId != nil || tmuxPane != nil) }
 
     var project: String { URL(fileURLWithPath: cwd).lastPathComponent }
 
@@ -127,10 +129,11 @@ enum Store {
     }()
 }
 
-/// Written by install.sh: the absolute `codex` path and the PATH of the shell that ran the install.
+/// Written by install.sh: the absolute `codex` and `tmux` paths and the PATH of the shell that ran the install.
 /// `codex queue` may start Codex's daemon, which inherits this PATH, so your hooks keep finding `node`.
 struct Config: Codable {
     var codex: String?
+    var tmux: String?
     var path: String?
 
     static func load() -> Config {
