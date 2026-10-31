@@ -2,8 +2,8 @@ import Foundation
 
 /// `cue selftest`: asserts the pure functions that guard typing. Screens are real captures
 /// from Claude Code 2.1.285 in iTerm2. Run by tests/check.sh.
-enum SelfTest {
-    static func run() -> Int32 {
+package enum SelfTest {
+    package static func run() -> Int32 {
         var fails = 0
         func check(_ name: String, _ ok: Bool) {
             print(ok ? "ok    \(name)" : "FAIL  \(name)")

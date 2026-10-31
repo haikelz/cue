@@ -2,8 +2,8 @@ import Foundation
 
 /// `cue hook claude` and `cue hook codex`: turn one hook event (JSON on stdin) into a session file update.
 /// Never fails the hook: any error goes to hook.log. Codex expects JSON on stdout, so it always gets some.
-enum Hook {
-    static func run(_ agent: String) -> Never {
+package enum Hook {
+    package static func run(_ agent: String) -> Never {
         var out: Data?
         do {
             out = try handle(FileHandle.standardInput.readDataToEndOfFile(), agent: agent)
@@ -15,7 +15,7 @@ enum Hook {
     }
 
     /// Returns the bytes to print on stdout, if any.
-    static func handle(_ data: Data, agent: String) throws -> Data? {
+    package static func handle(_ data: Data, agent: String) throws -> Data? {
         guard agent == "claude" || agent == "codex" else { throw HookError.unknownAgent }
         guard let input = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let event = input["hook_event_name"] as? String,
@@ -114,13 +114,13 @@ enum Hook {
     }
 
     /// Claude Code writes `terminalSequence` to the terminal for us; iTerm2 turns OSC 9 into a notification.
-    static func notification(_ text: String) throws -> Data {
+    package static func notification(_ text: String) throws -> Data {
         let clean = String(String.UnicodeScalarView(text.unicodeScalars.filter { $0.value >= 0x20 && !(0x7F...0x9F).contains($0.value) }))
         let seq = "\u{1B}]9;\(clean.prefix(180))\u{07}"
         return try JSONSerialization.data(withJSONObject: ["terminalSequence": seq])
     }
 
-    static func log(_ message: String) {
+    package static func log(_ message: String) {
         let line = "\(ISO8601DateFormatter().string(from: Date())) \(message)\n"
         let url = Store.root.appendingPathComponent("hook.log")
         try? FileManager.default.createDirectory(at: Store.root, withIntermediateDirectories: true)
@@ -134,15 +134,15 @@ enum Hook {
     }
 }
 
-enum HookError: Error { case badInput, unknownAgent }
+package enum HookError: Error { case badInput, unknownAgent }
 
-enum Codex {
+package enum Codex {
     /// Cue's hook command as install.sh writes it into ~/.codex/hooks.json.
-    static func command(exe: String) -> String {
+    package static func command(exe: String) -> String {
         "'" + exe.replacingOccurrences(of: "'", with: "'\\''") + "' hook codex"
     }
 
-    struct ListedHook: Decodable { let command: String?; let enabled: Bool?; let trustStatus: String? }
+    package struct ListedHook: Decodable { let command: String?; let enabled: Bool?; let trustStatus: String? }
 
     /// A JSON-RPC message from `codex app-server`; the `hooks/list` answer carries hooks grouped by folder.
     private struct Reply: Decodable {
@@ -153,7 +153,7 @@ enum Codex {
     }
 
     /// The footer's warning about Cue's Codex hooks, or nil. Pure, for the selftest.
-    static func warning(_ hooks: [ListedHook], command: String) -> String? {
+    package static func warning(_ hooks: [ListedHook], command: String) -> String? {
         let mine = hooks.filter { $0.command == command }
         if mine.count < 7 { return "Cue's Codex hooks are missing: run ./install.sh" }
         if mine.contains(where: { $0.trustStatus != "trusted" || $0.enabled == false }) {
@@ -166,7 +166,7 @@ enum Codex {
     /// trust status (Codex keys trust by list position, so another tool reordering hooks.json can
     /// untrust Cue's). Nil when Codex isn't set up, answers with an error, or says nothing within 10 s;
     /// the API is experimental.
-    static func listHooks() -> [ListedHook]? {
+    package static func listHooks() -> [ListedHook]? {
         let config = Config.load()
         guard let codex = config.codex, FileManager.default.isExecutableFile(atPath: codex) else { return nil }
         let p = Process()
@@ -212,7 +212,7 @@ enum Codex {
     /// Codex also fires hooks for `codex exec`, other clients, and its own background sessions (memory
     /// upkeep, for one), which have no rollout at all. A rollout's first line names its originator; rows
     /// are for the interactive TUI. A rollout path whose file isn't written yet counts as interactive.
-    static func interactive(_ rollout: String?) -> Bool {
+    package static func interactive(_ rollout: String?) -> Bool {
         guard let rollout else { return false }
         guard let h = FileHandle(forReadingAtPath: rollout) else { return true }
         defer { try? h.close() }

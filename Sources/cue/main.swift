@@ -1,3 +1,4 @@
+import CueCore
 import Foundation
 
 // Pick the mode before AppKit loads, so a hook run stays a few milliseconds.
