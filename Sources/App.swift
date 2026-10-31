@@ -118,6 +118,13 @@ final class Model: ObservableObject {
 
     var waiting: Int { sessions.filter { $0.status != "working" && $0.deliverable }.count }
 
+    /// The popover header's count, such as "2 waiting · 1 working".
+    var summary: String {
+        let working = sessions.filter { $0.status == "working" }.count
+        return [waiting > 0 ? "\(waiting) waiting" : nil, working > 0 ? "\(working) working" : nil]
+            .compactMap { $0 }.joined(separator: " · ")
+    }
+
     /// Sorted once per popover open, so a row never moves under your cursor.
     var rows: [Session] {
         sessions.sorted { (order.firstIndex(of: $0.sessionId) ?? .max) < (order.firstIndex(of: $1.sessionId) ?? .max) }
@@ -344,41 +351,42 @@ final class Model: ObservableObject {
 
 struct PopoverView: View {
     @EnvironmentObject var model: Model
+    @FocusState private var focused: String?
+    @State private var expanded: String?  // one reply open at a time keeps the popover short
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(spacing: 0) {
+            header
+            Divider()
             if model.sessions.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("No agent sessions yet").font(.headline)
+                ContentUnavailableView {
+                    Label("No agent sessions", systemImage: "terminal")
+                } description: {
                     Text(model.hooksInstalled
                          ? "A Claude Code, Codex or Amp session appears after its next prompt or reply."
                          : "No agent is wired to Cue yet. Run ./install.sh in the cue folder.")
-                        .font(.callout).foregroundStyle(.secondary)
                 }
-                .padding(16)
+                .padding(.vertical, 12)
             } else if model.rows.count <= 3 {
                 rowList
             } else {
                 // ponytail: fixed height past 3 rows; a measured height would need a GeometryReader dance.
                 ScrollView { rowList }.frame(height: 600)
             }
-            Divider()
-            VStack(alignment: .leading, spacing: 4) {
-                if let warning = model.codexWarning {
-                    Label(warning, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+            if let warning = model.codexWarning {
+                Label {
+                    Text(warning)
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                 }
-                HStack {
-                    Label(model.hooksInstalled ? "Hooks installed" : "Hooks missing",
-                          systemImage: model.hooksInstalled ? "checkmark.circle" : "exclamationmark.triangle")
-                    Spacer()
-                    Text("⌃⌥Space opens Cue")
-                    Button("Quit") { NSApp.terminate(nil) }.buttonStyle(.borderless)
-                }
+                .font(.callout)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(8)
+                .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                .padding([.horizontal, .bottom], 8)
             }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            Divider()
+            footer
         }
         .frame(width: 380)
         // Each open puts the cursor in the first row you can type in: after sorting, the longest wait.
@@ -387,25 +395,51 @@ struct PopoverView: View {
         }
     }
 
-    @FocusState private var focused: String?
-    @State private var expanded: String?  // one reply open at a time keeps the popover short
+    private var header: some View {
+        HStack(spacing: 8) {
+            Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 20, height: 20).accessibilityHidden(true)
+            Text("Cue").font(.headline)
+            Spacer()
+            Text(model.summary).font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
 
     private var rowList: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 6) {
             ForEach(model.rows, id: \.sessionId) { s in
                 RowView(session: s, focus: $focused,
                         expanded: Binding(get: { expanded == s.sessionId }, set: { expanded = $0 ? s.sessionId : nil }))
-                Divider()
             }
         }
+        .padding(8)
+    }
+
+    private var footer: some View {
+        HStack(spacing: 8) {
+            Label(model.hooksInstalled ? "Hooks installed" : "Hooks missing",
+                  systemImage: model.hooksInstalled ? "checkmark.circle" : "exclamationmark.triangle")
+            Spacer()
+            Text("⌃⌥Space opens Cue")
+            Button("Quit") { NSApp.terminate(nil) }
+                .buttonStyle(.borderless)
+                .keyboardShortcut("q")
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
     }
 }
 
+/// One session as a rounded tile, like a Control Center module: agent, status, reply, prompt box.
 struct RowView: View {
     @EnvironmentObject var model: Model
     let session: Session
     var focus: FocusState<String?>.Binding
     @Binding var expanded: Bool
+    @State private var hovering = false
 
     var body: some View {
         let key = session.rowKey
@@ -417,39 +451,97 @@ struct RowView: View {
         let draft = Binding(get: { model.drafts[key, default: ""] }, set: { model.drafts[key] = $0 })
         let canSend = canType && (queues || session.status == "idle") && !Delivery.sanitize(draft.wrappedValue).isEmpty
 
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
+                AgentIcon(agent: session.agent)
                 Text(model.name(session)).font(.headline).lineLimit(1)
-                Spacer()
+                Spacer(minLength: 8)
                 StatusBadge(status: target ? session.status : "none", since: session.updatedAt)
             }
             if let message = session.lastMessage, !message.isEmpty {
                 ReplyView(message: message, expanded: $expanded)
             }
-            PromptEditor(text: draft, placeholder: placeholder(target), enabled: canType)
-                .focused(focus, equals: session.sessionId)
-            HStack(spacing: 6) {
-                if canType { Text("⌘↩ to send").font(.caption).foregroundStyle(.secondary) }
-                Spacer()
-                // Only the row being typed in owns ⌘Return, so rows never compete for the shortcut.
-                Button("Send") { model.send(session) }
-                    .disabled(!canSend)
-                    .keyboardShortcut(editing ? KeyboardShortcut(.return, modifiers: .command) : nil)
-                if session.agent != "codex" {  // Codex hooks run in its daemon, so the tab is unknown
-                    Button("Open") { model.open(session) }.disabled(session.itermSessionId == nil && session.tmuxPane == nil)
+            if !target || session.isClaude && session.status == "needs_you" {
+                // Nothing to type here yet: a line saying why, and the way to the terminal.
+                HStack(spacing: 8) {
+                    Text(placeholder(target)).font(.callout).foregroundStyle(.secondary)
+                    Spacer()
+                    if canOpen { Button("Open") { model.open(session) }.controlSize(.small) }
                 }
+            } else {
+                PromptEditor(text: draft, placeholder: placeholder(target), enabled: canType, focused: editing)
+                    .focused(focus, equals: session.sessionId)
+                HStack(spacing: 8) {
+                    if editing && canType { Text("⌘↩ to send").font(.caption).foregroundStyle(.tertiary) }
+                    Spacer()
+                    if canOpen {
+                        Button { model.open(session) } label: { Label("Open", systemImage: "arrow.up.forward.app") }
+                            .labelStyle(.iconOnly)
+                            .buttonStyle(.borderless)
+                            .help("Open in the terminal")
+                    }
+                    // Only the row being typed in owns ⌘Return, so rows never compete for the shortcut.
+                    Button("Send") { model.send(session) }
+                        .buttonStyle(.borderedProminent)
+                        .tint(canSend ? nil : .gray)  // a disabled prominent button stays a muddy blue otherwise
+                        .disabled(!canSend)
+                        .keyboardShortcut(editing ? KeyboardShortcut(.return, modifiers: .command) : nil)
+                }
+                .controlSize(.small)
             }
-            if let note = model.notes[key] {
-                Text(note).font(.callout).foregroundStyle(.secondary)
-            }
+            if let note = model.notes[key] { NoteView(note: note) }
         }
-        .padding(12)
+        .padding(10)
+        .background(Color.primary.opacity(editing || hovering ? 0.07 : 0.04), in: RoundedRectangle(cornerRadius: 10))
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.15), value: hovering)
     }
+
+    /// Codex hooks run in its daemon, so its tab is unknown; other rows need a tab or a pane.
+    private var canOpen: Bool { session.agent != "codex" && (session.itermSessionId != nil || session.tmuxPane != nil) }
 
     private func placeholder(_ target: Bool) -> String {
         if !target { return "Start Claude in iTerm2 or tmux to send from here" }
-        if session.isClaude { return session.status == "needs_you" ? "Answer in terminal" : "Next prompt" }
+        if session.isClaude { return session.status == "needs_you" ? "Answer in the terminal" : "Next prompt" }
         return session.status == "idle" ? "Next prompt" : "Queue a prompt"
+    }
+}
+
+/// The agent as an SF Symbol in a tinted circle; the row title names it, so VoiceOver skips this.
+struct AgentIcon: View {
+    let agent: String
+
+    var body: some View {
+        let (symbol, color): (String, Color) = switch agent {
+        case "codex": ("curlybraces", .teal)
+        case "amp": ("bolt.fill", .purple)
+        default: ("sparkle", .orange)
+        }
+        Image(systemName: symbol)
+            .font(.system(size: 10, weight: .bold))
+            .foregroundStyle(.white)
+            .frame(width: 20, height: 20)
+            .background(color.gradient, in: Circle())
+            .accessibilityHidden(true)
+    }
+}
+
+/// A row's note, marked by kind: a spinner while sending, a check once the agent took the prompt,
+/// a warning for everything else, since every other note asks you to look at something.
+struct NoteView: View {
+    let note: String
+
+    var body: some View {
+        Label {
+            Text(note).foregroundStyle(.secondary)
+        } icon: {
+            switch note {
+            case "Sending…": ProgressView().controlSize(.mini)
+            case "Sent", "Queued": Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+            default: Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+            }
+        }
+        .font(.callout)
     }
 }
 
@@ -493,12 +585,13 @@ struct ReplyView: View {
     }
 }
 
-/// A four-line text area for the next prompt; longer prompts scroll inside it.
-/// Return adds a line break; the row's Send button takes ⌘Return.
+/// A four-line text area for the next prompt; longer prompts scroll inside it. Drawn like a macOS
+/// text field, with the accent focus ring while you type. Return adds a line break; ⌘Return sends.
 struct PromptEditor: View {
     @Binding var text: String
     let placeholder: String
     let enabled: Bool
+    let focused: Bool
 
     var body: some View {
         TextEditor(text: $text)
@@ -507,8 +600,9 @@ struct PromptEditor: View {
             .padding(.horizontal, 4)
             .padding(.vertical, 6)
             .frame(height: 76)
-            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
-            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.35)))
+            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
+            .overlay(RoundedRectangle(cornerRadius: 7).stroke(Color.primary.opacity(0.12)))
+            .overlay(RoundedRectangle(cornerRadius: 7).stroke(Color.accentColor.opacity(focused ? 0.6 : 0), lineWidth: 3).padding(-1.5))
             .overlay(alignment: .topLeading) {
                 if text.isEmpty {
                     Text(placeholder)
@@ -524,6 +618,7 @@ struct PromptEditor: View {
     }
 }
 
+/// Status as macOS shows presence: a colored dot and text, or a small spinner while the agent works.
 struct StatusBadge: View {
     let status: String
     let since: Double
@@ -535,12 +630,16 @@ struct StatusBadge: View {
         case "working": ("Working", .blue)
         default: ("Read only", .gray)
         }
-        TimelineView(.periodic(from: .now, by: 1)) { _ in Text("\(label) · \(ago)") }
-            .font(.caption)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 2)
-            .background(color.opacity(0.15), in: Capsule())
-            .overlay(Capsule().stroke(color.opacity(0.6)))
+        HStack(spacing: 5) {
+            if status == "working" {
+                ProgressView().controlSize(.mini)
+            } else {
+                Circle().fill(color).frame(width: 7, height: 7)
+            }
+            TimelineView(.periodic(from: .now, by: 1)) { _ in Text("\(label) · \(ago)") }
+                .foregroundStyle(status == "needs_you" ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
+        }
+        .font(.caption)
     }
 
     private var ago: String {
