@@ -4,12 +4,12 @@ Cue has no server and no socket. Each agent reports into one folder of JSON file
 
 ```mermaid
 flowchart LR
-    C["Claude Code session<br/>(iTerm2 tab)"] -- "hook event" --> H["cue hook claude / codex"]
+    C["Claude Code session<br/>(iTerm2 tab or tmux pane)"] -- "hook event" --> H["cue hook claude / codex"]
     X["Codex session<br/>(via its shared daemon)"] -- "hook event" --> H
     P["Cue plugin<br/>inside Amp"] -- "thread state, heartbeat" --> F
     H -- "atomic write" --> F[("~/.cue/sessions/*.json")]
     F -- "read every 1 s" --> A["Cue app<br/>(menubar popover)"]
-    A -- "osascript: probe, type, Return" --> C
+    A -- "osascript or tmux: probe, type, Return" --> C
     A -- "codex queue" --> X
     A -- "~/.cue/inbox/‹thread›/" --> P
 ```
@@ -23,6 +23,7 @@ One binary does all of it. `main.swift` picks the mode before AppKit loads, whic
 | `cue hook codex` | Handle one Codex hook event from stdin; always prints JSON |
 | `cue send <session-id> <text>` | The app's send path from the command line |
 | `cue selftest` | Asserts for the safety-critical pure functions |
+| `cue codex-health [cue path]` | The footer's Codex hook check: `ok`, the warning, or `no answer` |
 
 ## Agents at a glance
 
@@ -30,10 +31,10 @@ One binary does all of it. `main.swift` picks the mode before AppKit loads, whic
 | --- | --- | --- | --- |
 | Reports through | Hooks in `~/.claude/settings.json` | Hooks in `~/.codex/hooks.json` | `~/.config/amp/plugins/cue.ts` |
 | Hooks run in | The session's `claude` process | Codex's shared app-server daemon | (plugin, inside the Amp process) |
-| Delivery | Typed into the iTerm2 tab | `codex queue` | Inbox file, appended by the plugin |
+| Delivery | Typed into the iTerm2 tab or tmux pane | `codex queue` | Inbox file, appended by the plugin |
 | Confirmation | `last_prompt_at` within 5 s | `codex queue` exit 0: "Sent", or "Queued" during a turn | A receipt from the plugin |
 | Liveness | PID and start time | `SessionEnd`, a newer session in the same folder, or 24 h without change | Heartbeat younger than 30 s; the file goes after an hour |
-| Open | Yes | No; the tab is unknown | Yes, from the plugin's `ITERM_SESSION_ID` |
+| Open | The iTerm2 tab, or the tmux pane and its terminal app | No; the tab is unknown | Yes, from the plugin's `ITERM_SESSION_ID` |
 
 ## Session tracking
 
@@ -49,6 +50,8 @@ Hook mode never fails a hook: it exits 0 on any error, logs to `~/.cue/hook.log`
 
 Codex runs hooks in its shared app-server daemon, so a hook knows the session id but not its tab or terminal process. Codex expects JSON on stdout for `Stop`; `cue hook codex` prints `{}` for every event. It skips sessions whose rollout file names an originator other than `codex-tui`, and sessions with no rollout at all (Codex's own background sessions, such as memory upkeep), which keeps `codex exec` runs and background work out of the list. When a new interactive session starts, it removes the idle Codex rows in the same folder: `/clear`, `/new` and `/resume` start a new session in the same TUI, and the old thread would otherwise stay sendable for 30 minutes with nobody watching it.
 
+Codex keys hook trust by list position and a hash, so another tool that reorders `hooks.json` can silently untrust Cue's hooks. When the popover opens and `hooks.json` or `config.toml` changed since the last answer, the app starts `codex app-server` and asks `hooks/list`, which reports each hook's `trustStatus` and `enabled`. The footer warns when fewer than seven Cue hooks are listed, or when one isn't trusted or enabled. The call runs on a background queue, takes about two seconds, and stays quiet when Codex answers with an error or says nothing within 10 seconds: the API is marked experimental.
+
 ### Status rules
 
 | Event | Status written | Other effect |
@@ -57,7 +60,7 @@ Codex runs hooks in its shared app-server daemon, so a hook knows the session id
 | `UserPromptSubmit` | `working` | Stamps `last_prompt_at` and, for Codex, the turn id |
 | `PostToolUse`, `PostToolUseFailure`, `ElicitationResult` | `working`, if not already | No write while working, which keeps the hot path cheap |
 | `PermissionRequest`, `Elicitation` | `needs_you` | Fires before the dialog draws |
-| `Stop` | `idle` | Stores the first 500 characters of `last_assistant_message`; Claude also gets the notification |
+| `Stop` | `idle` | Stores the first 4,000 characters of `last_assistant_message`; Claude also gets the notification |
 | `StopFailure` (Claude) | `idle` | Stores `API error: <type>`; returns the notification |
 | `Interrupt` (Codex) | `idle` | Esc in Codex |
 | `Notification` (`idle_prompt`, Claude) | `idle`, from `working` | A second idle signal |
@@ -99,13 +102,14 @@ stateDiagram-v2
 | `last_prompt_at` | `UserPromptSubmit` or `agent.start` time | Send confirmation |
 | `updated_at` | Each status change | Badge time, recovery checks |
 | `pid`, `pid_start` | Claude: the `claude` process above the hook; Amp: the Amp process | Liveness; the start time guards against PID reuse |
-| `tty` | Claude's controlling terminal | Matches the iTerm2 tab before typing |
+| `tty` | Claude's controlling terminal | Matches the iTerm2 tab or tmux pane before typing |
 | `iterm_session_id` | `ITERM_SESSION_ID`, dropped when `TMUX` is set | The tab to type into, and Open |
+| `tmux_socket`, `tmux_pane` | Claude inside tmux: the socket part of `$TMUX`, and `$TMUX_PANE` | The pane to type into, and Open |
 | `transcript_path` | Hook input | Claude interrupt detection, Codex originator and activity |
 | `turn_id` | Codex `UserPromptSubmit` | Filters Codex subagent events |
 | `heartbeat` | Amp plugin | Amp liveness |
 
-Times are Unix seconds. Claude rows key drafts by iTerm2 tab, so a draft survives `/clear`. Codex and Amp rows key by session id, since several of their threads can share a tab.
+Times are Unix seconds. Claude rows key drafts by iTerm2 tab or tmux pane, so a draft survives `/clear`. Codex and Amp rows key by session id, since several of their threads can share a tab.
 
 ### Recovery without a hook event (Claude Code)
 
@@ -118,20 +122,22 @@ Codex reports Esc through its `Interrupt` hook, and Amp through its thread state
 
 ## Delivery
 
-### Claude Code: typing into the tab
+### Claude Code: typing into the terminal
 
-`Delivery.typeIntoClaude` turns a prompt into keystrokes. Each step can refuse, and nothing reaches the tab until the checks pass.
+`Delivery.typeIntoClaude` turns a prompt into keystrokes for the session's iTerm2 tab, or for its tmux pane when Claude runs inside tmux. Each step can refuse, and nothing reaches the terminal until the checks pass.
 
 1. **Sanitize.** Strip C0 and C1 control characters (line breaks stay), DEL, zero-width, bidi, tag and variation-selector characters. Turn tabs into spaces, since Tab completes in Claude Code. Add a space after a trailing `\`, since `\` then Return inserts a line break.
 2. **Process checks.** Re-read the session file: it must say `idle`. The PID must run with the recorded start time, as its terminal's foreground process group, not stopped. Its tty must match the recorded one.
-3. **Screen checks.** Read the tab's tty and visible text with AppleScript. The tty must match. Claude's input box must be on screen: a rule line of `─`, a line starting with `❯` (or `!` in shell mode) in column 0, more input lines, a rule line. No spinner may sit in the six lines above the box, and vim mode must not be in NORMAL.
+3. **Screen checks.** Read the tab's tty and visible text with AppleScript, or the pane's with `tmux display-message` and `tmux capture-pane`. The tty must match. Claude's input box must be on screen: a rule line of `─`, a line starting with `❯` (or `!` in shell mode) in column 0, more input lines, a rule line. No spinner may sit in the six lines above the box, and vim mode must not be in NORMAL.
 4. **Clear the box.** If the box holds text, send Ctrl+U once per box line. A draft stays recoverable with Ctrl+Y; a grayed-out suggestion vanishes.
-5. **Type.** Send the prompt in 200-character chunks, 150 ms apart, with each line break as ESC + CR (Option+Return). No Return yet.
+5. **Type.** Send the prompt in 200-character chunks, 150 ms apart, with each line break as ESC + CR (Option+Return). No Return yet. tmux gets the same bytes through `send-keys -H`; a text argument ending in `;` would parse as a tmux command separator.
 6. **Check again.** Repeat steps 2 and 3, then confirm the box's last line is the end of the prompt.
-7. **Return.** Press Return in a separate AppleScript call that re-checks the tty.
+7. **Return.** Press Return in a separate call that re-checks the tty.
 8. **Confirm.** The app waits for `last_prompt_at` at or after the send start, with a 5-second deadline that starts once typing ends. Prompts starting with `/` or `!` skip this step.
 
-A refusal before step 5 leaves the tab untouched. A failure from step 5 on copies the prompt to the clipboard and says so on the row. The column-0 rule matters: dialog options such as ` ❯ 1. Yes` are indented, so a dialog can't pass for the input box.
+A refusal before step 5 leaves the terminal untouched. A failure from step 5 on copies the prompt to the clipboard and says so on the row. The column-0 rule matters: dialog options such as ` ❯ 1. Yes` are indented, so a dialog can't pass for the input box.
+
+tmux runs the same steps with the tmux CLI, so Ghostty, Kitty, WezTerm and Terminal.app all work, and no macOS permission is involved. Two tmux states refuse before every step: copy mode, where tmux reads keys as its own commands while `capture-pane` still shows Claude's screen, and `synchronize-panes`, where tmux copies keys into every pane of the window. The app uses the `tmux` path from `~/.cue/config.json`, then `/opt/homebrew/bin` and `/usr/local/bin`. Open selects the pane's window and pane, then walks up from the tmux client you used last to the terminal app that hosts it and activates that app. iTerm2 runs shells under its `iTermServer` helper, whose parent is launchd, so meeting that helper means iTerm2.
 
 ### Codex: `codex queue`
 
@@ -169,17 +175,22 @@ The plugin checks each inbox file before trusting it: a name of the form `<uuid>
 | Codex row expiry | 24 h without change | Codex sends `SessionEnd` after 30 unopened minutes; the expiry covers a lost one. A new interactive Codex session in a folder also retires that folder's idle Codex rows |
 | Stale-working probe (Claude) | 15 s quiet | Long enough that a working session has written to its transcript |
 | Poll interval | 1 s | Rows and the count stay current; reading a dozen small files costs nothing |
-| Last message | 500 characters | Enough for the preview and the notification |
+| Last message | 4,000 characters | Enough to read most replies in full; the row shows two lines until you click it |
 | AppleScript timeout | 60 s (10 s for probes and Open) | Leaves time for the first-run Automation consent dialog |
+| tmux timeout | 10 s | tmux answers in milliseconds; no consent dialog |
 | `codex queue` timeout | 30 s | Covers a daemon cold start |
 | Codex hook timeout | 3 s | Codex caps some events at 3 s; a hook run takes about 6 ms |
 | Lock wait | 50 tries, 10 ms apart | A stuck lock holder can't hang a hook or the app |
+
+## The menubar app
+
+An `NSStatusItem` with an `NSPopover` holds the UI; SwiftUI's `MenuBarExtra` can't open from code, which the hotkey needs. ⌃⌥Space comes from Carbon's `RegisterEventHotKey`, which needs no Accessibility permission. Each time the popover opens, the app re-sorts the rows and puts the cursor in the first row you can type in. Only the row being edited owns ⌘Return, and one reply expands at a time.
 
 ## Concurrency
 
 - **Writes** go to a temp file and `rename(2)`, so readers never see half a file. The Amp plugin writes the same way.
 - **One lock** (`~/.cue/.lock`, `flock`) serializes every read-modify-write by hooks and the app. The Amp plugin is the only writer of its session file, so it doesn't take the lock.
-- **Blocking calls** (AppleScript, `codex queue`) run one at a time on a serial dispatch queue, off the main thread. Probes for the same row don't stack.
+- **Blocking calls** (AppleScript, tmux, `codex queue`) run one at a time on a serial dispatch queue, off the main thread. Probes for the same row don't stack. The Codex `hooks/list` check runs on a separate background queue, so it never delays a send.
 
 ## Settings install and uninstall
 
@@ -195,7 +206,7 @@ Live sessions reload `~/.claude/settings.json` and `~/.codex/hooks.json` when th
 | `~/.config/amp/plugins/cue.ts` | The Amp plugin |
 | `~/.cue/sessions/*.json` | One file per session |
 | `~/.cue/inbox/‹thread›/` | Amp prompts waiting for the plugin, and its receipts |
-| `~/.cue/config.json` | The `codex` path and PATH from install time |
+| `~/.cue/config.json` | The `codex` and `tmux` paths and PATH from install time |
 | `~/.cue/hook.log` | Hook errors |
 | `~/.cue/.lock` | The lock file |
 | `*.cue-backup-*` | Settings backups beside `~/.claude/settings.json` and `~/.codex/hooks.json`, the last three of each |
