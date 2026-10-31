@@ -5,7 +5,7 @@ import Foundation
 package enum Codex {
     /// `codex queue` hands the prompt to Codex's daemon, which runs it now or after the current turn.
     /// The `=` forms keep a prompt that starts with "-" from parsing as a flag.
-    package static func queue(_ s: Session, _ text: String) -> Outcome {
+    static func queue(_ s: Session, _ text: String) -> Outcome {
         let config = Config.load()
         guard let codex = config.codex, FileManager.default.isExecutableFile(atPath: codex) else {
             return .refused("Cue doesn't know where codex is; run install.sh again")
@@ -100,7 +100,7 @@ package enum Codex {
     /// Codex also fires hooks for `codex exec`, other clients, and its own background sessions (memory
     /// upkeep, for one), which have no rollout at all. A rollout's first line names its originator; rows
     /// are for the interactive TUI. A rollout path whose file isn't written yet counts as interactive.
-    package static func interactive(_ rollout: String?) -> Bool {
+    static func interactive(_ rollout: String?) -> Bool {
         guard let rollout else { return false }
         guard let h = FileHandle(forReadingAtPath: rollout) else { return true }
         defer { try? h.close() }

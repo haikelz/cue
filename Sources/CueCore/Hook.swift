@@ -16,7 +16,7 @@ package enum Hook {
     }
 
     /// Returns the bytes to print on stdout, if any.
-    package static func handle(_ data: Data, agent: Agent) throws -> Data? {
+    static func handle(_ data: Data, agent: Agent) throws -> Data? {
         guard let input = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let event = input["hook_event_name"] as? String,
               let id = input["session_id"] as? String, Store.validID(id)
@@ -114,13 +114,13 @@ package enum Hook {
     }
 
     /// Claude Code writes `terminalSequence` to the terminal for us; iTerm2 turns OSC 9 into a notification.
-    package static func notification(_ text: String) throws -> Data {
+    static func notification(_ text: String) throws -> Data {
         let clean = String(String.UnicodeScalarView(text.unicodeScalars.filter { $0.value >= 0x20 && !(0x7F...0x9F).contains($0.value) }))
         let seq = "\u{1B}]9;\(clean.prefix(180))\u{07}"
         return try JSONSerialization.data(withJSONObject: ["terminalSequence": seq])
     }
 
-    package static func log(_ message: String) {
+    static func log(_ message: String) {
         let line = "\(ISO8601DateFormatter().string(from: Date())) \(message)\n"
         let url = Store.root.appendingPathComponent("hook.log")
         try? FileManager.default.createDirectory(at: Store.root, withIntermediateDirectories: true)

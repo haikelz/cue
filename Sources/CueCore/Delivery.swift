@@ -9,7 +9,7 @@ package enum Outcome: Sendable {
 }
 
 /// Why a delivery step stopped. The terminal names the tab or pane in each message.
-package enum DeliveryError: Error, Equatable {
+package enum DeliveryError: Error {
     case closed(String)   // the tab, the pane or the tmux server is gone
     case moved(String)    // the tab or pane runs something else now
     case refused(String)  // a check said no before any key went out
@@ -36,7 +36,7 @@ package enum Delivery {
     }
 
     /// Types the prompt into the session's iTerm2 tab or tmux pane, then presses Return, each step behind the full set of checks.
-    package static func typeIntoClaude(_ s: Session, _ text: String) -> Outcome {
+    static func typeIntoClaude(_ s: Session, _ text: String) -> Outcome {
         guard let terminal = s.terminal, let tty = s.tty else { return .refused("Not in iTerm2 or tmux") }
         let lines: [String]
         do { lines = try check(s) } catch { return .refused(error.message) }
@@ -73,7 +73,7 @@ package enum Delivery {
 
     /// Every check that guards typing, process facts first, then what the terminal shows. Returns the
     /// input box's lines.
-    package static func check(_ s: Session) throws(DeliveryError) -> [String] {
+    static func check(_ s: Session) throws(DeliveryError) -> [String] {
         if let why = gate(Store.read(s.sessionId) ?? s) { throw .refused(why) }
         guard let terminal = s.terminal, let tty = s.tty else { throw .refused("Not in iTerm2 or tmux") }
         let text = try terminal.screen(tty: tty, timeout: 60)
@@ -82,7 +82,7 @@ package enum Delivery {
     }
 
     /// Process checks, cheapest first. Returns why typing must not happen, or nil.
-    package static func gate(_ s: Session) -> String? {
+    static func gate(_ s: Session) -> String? {
         guard s.status == .idle else { return s.status == .working ? "Claude is working" : "Claude needs you in the terminal" }
         guard let pid = s.pid, let p = Proc(pid), let start = s.pidStart, abs(p.start - start) < 0.01 else {
             return "Claude process is gone"
@@ -95,7 +95,7 @@ package enum Delivery {
     /// Why the screen is unsafe to type into, or nil. The box check catches what process checks
     /// can't: a permission dialog, a picker, the Ctrl+G editor. Only lines next to the box count,
     /// so Claude's own output can't trip the spinner or vim checks.
-    package static func screenProblem(_ screen: String) -> String? {
+    static func screenProblem(_ screen: String) -> String? {
         guard let b = box(screen) else { return "Claude's input box isn't on screen (dialog, editor or menu open)" }
         if b.above.contains(where: isSpinner) { return "Claude is working" }
         if (b.lines + b.below).contains(where: { $0.contains("-- NORMAL --") }) {
@@ -104,12 +104,12 @@ package enum Delivery {
         return nil
     }
 
-    package struct Box { let lines: [String], above: [String], below: [String] }
+    struct Box { let lines: [String], above: [String], below: [String] }
 
     /// Claude Code's input box: a rule line, a line starting with "❯" (or "!" in bash mode),
     /// more input lines, a rule line. The last such box on screen, with its neighbours.
     /// The prompt marker sits in column 0; dialog options (" ❯ 1. Yes") are indented.
-    package static func box(_ screen: String) -> Box? {
+    static func box(_ screen: String) -> Box? {
         let raw = screen.split(separator: "\n").map(String.init).filter { !$0.allSatisfy(\.isWhitespace) }
         let tail = Array(raw.suffix(30))
         let trim: (String) -> String = { $0.trimmingCharacters(in: .whitespaces) }
@@ -122,7 +122,7 @@ package enum Delivery {
     }
 
     /// True when the box's last line is the end of the prompt's last line (wrapping keeps that a suffix).
-    package static func box(_ lines: [String], endsWith text: String) -> Bool {
+    static func box(_ lines: [String], endsWith text: String) -> Bool {
         let tail = String(text.split(separator: "\n", omittingEmptySubsequences: false).last ?? "").trimmingCharacters(in: .whitespaces)
         var last = lines.last ?? ""
         if lines.count == 1 { last = String(last.dropFirst()) }  // the "❯" or "!" marker
@@ -131,7 +131,7 @@ package enum Delivery {
     }
 
     /// The working spinner line: "✻ Propagating… (4s · ↓ 263 tokens)". A finished turn reads "✻ Cooked for 2s".
-    package static func isSpinner(_ line: String) -> Bool {
+    static func isSpinner(_ line: String) -> Bool {
         line.range(of: #"^\S\s+[^\s…]+…\s*\("#, options: .regularExpression) != nil
     }
 
@@ -163,7 +163,7 @@ package enum Delivery {
     /// The prompt as key chunks: each line cut into 200-character pieces, with Option+Return between
     /// lines. Claude Code reads input that arrives in one burst as a paste and treats it as data, not
     /// as your instruction; terminals send the chunks 150 ms apart to stay under that detector.
-    package static func keys(_ text: String) -> [[UInt8]] {
+    static func keys(_ text: String) -> [[UInt8]] {
         var out: [[UInt8]] = []
         for (n, line) in text.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
             if n > 0 { out.append(Key.lineBreak) }

@@ -2,7 +2,7 @@ import Foundation
 
 /// What typing into Claude Code needs from a terminal: its screen, its keys, and a way to bring it
 /// forward. An iTerm2 tab answers through AppleScript; a tmux pane, in any terminal, through the tmux CLI.
-package protocol Terminal: Sendable {
+protocol Terminal: Sendable {
     /// The visible text, once the tab or pane is known to still hold `tty`.
     func screen(tty: String, timeout: Double) throws(DeliveryError) -> String
     /// Sends each chunk 150 ms apart, once the tab or pane still holds `tty`.
@@ -13,39 +13,39 @@ package protocol Terminal: Sendable {
 }
 
 /// An app to bring forward: a process that may be a GUI app, or a bundle id.
-package enum AppRef: Equatable, Sendable {
+package enum AppRef: Sendable {
     case pid(pid_t)
     case bundle(String)
 }
 
 /// The bytes Claude delivery sends besides text: Ctrl+U clears to line start, ESC CR (Option+Return)
 /// breaks a line, CR submits.
-package enum Key {
-    package static let clearLine: [UInt8] = [0x15]
-    package static let lineBreak: [UInt8] = [0x1B, 0x0D]
-    package static let submit: [UInt8] = [0x0D]
+enum Key {
+    static let clearLine: [UInt8] = [0x15]
+    static let lineBreak: [UInt8] = [0x1B, 0x0D]
+    static let submit: [UInt8] = [0x0D]
 }
 
 extension Session {
     /// Where Claude prompts go: the tmux pane when Claude runs inside tmux, else the iTerm2 tab.
-    package var terminal: (any Terminal)? {
+    var terminal: (any Terminal)? {
         if let tmuxSocket, let tmuxPane { return TmuxPane(socket: tmuxSocket, pane: tmuxPane) }
         return itermSessionId.map(ITermTab.init(id:))
     }
 }
 
 /// An iTerm2 tab, found by its session id and driven through AppleScript.
-package struct ITermTab: Terminal {
-    package let id: String
+struct ITermTab: Terminal {
+    let id: String
 
-    package func screen(tty: String, timeout: Double) throws(DeliveryError) -> String {
+    func screen(tty: String, timeout: Double) throws(DeliveryError) -> String {
         let out = try osascript(Self.probeScript, [id], timeout: timeout)
         let parts = out.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
         guard String(parts[0]) == tty else { throw .moved("Tab no longer runs this session") }
         return parts.count > 1 ? String(parts[1]) : ""
     }
 
-    package func send(_ chunks: [[UInt8]], tty: String) throws(DeliveryError) {
+    func send(_ chunks: [[UInt8]], tty: String) throws(DeliveryError) {
         switch try osascript(Self.typeScript, [id, tty] + chunks.map { String(decoding: $0, as: UTF8.self) }) {
         case "ok": return
         case "tty-changed": throw .moved("Tab no longer runs this session")
@@ -53,7 +53,7 @@ package struct ITermTab: Terminal {
         }
     }
 
-    package func open() throws(DeliveryError) -> [AppRef] {
+    func open() throws(DeliveryError) -> [AppRef] {
         _ = try osascript(Self.openScript, [id], timeout: 10)
         return []  // the script brought iTerm2 forward
     }
@@ -123,15 +123,15 @@ package struct ITermTab: Terminal {
 /// A tmux pane, driven through the tmux CLI, which needs no macOS permission. Keys go as raw bytes
 /// (`send-keys -H`), the same bytes the iTerm2 script writes: tmux would parse a text argument ending
 /// in ";" as a command separator.
-package struct TmuxPane: Terminal {
-    package let socket: String, pane: String
+struct TmuxPane: Terminal {
+    let socket: String, pane: String
 
-    package func screen(tty: String, timeout: Double) throws(DeliveryError) -> String {
+    func screen(tty: String, timeout: Double) throws(DeliveryError) -> String {
         guard try paneTTY() == tty else { throw .moved("Pane no longer runs this session") }
         return try tmux(["capture-pane", "-p", "-t", pane])
     }
 
-    package func send(_ chunks: [[UInt8]], tty: String) throws(DeliveryError) {
+    func send(_ chunks: [[UInt8]], tty: String) throws(DeliveryError) {
         guard try paneTTY() == tty else { throw .moved("Pane no longer runs this session") }
         for bytes in chunks {
             _ = try tmux(["send-keys", "-t", pane, "-H"] + bytes.map { String(format: "%02x", $0) })
@@ -141,7 +141,7 @@ package struct TmuxPane: Terminal {
 
     /// Selects the pane in its window, then lists the processes above the tmux client you used last:
     /// one of them is the terminal app showing it.
-    package func open() throws(DeliveryError) -> [AppRef] {
+    func open() throws(DeliveryError) -> [AppRef] {
         _ = try tmux(["select-window", "-t", pane, ";", "select-pane", "-t", pane])
         let clients = (try? tmux(["list-clients", "-t", pane, "-F", "#{client_activity} #{client_pid}"])) ?? ""
         let latest = clients.split(separator: "\n").compactMap { line -> (Int, pid_t)? in

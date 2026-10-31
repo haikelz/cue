@@ -5,13 +5,13 @@ import Foundation
 /// rename can win, so two Amp windows on one thread can't both send it, and Cue withdraws a file that
 /// nobody claimed in time instead of letting it arrive late.
 package enum Inbox {
-    package static let root = Store.root.appendingPathComponent("inbox")
+    static let root = Store.root.appendingPathComponent("inbox")
 
-    package static func validThread(_ id: String) -> Bool {
+    static func validThread(_ id: String) -> Bool {
         id.range(of: #"^T-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"#, options: .regularExpression) != nil
     }
 
-    package static func drop(_ s: Session, _ text: String) -> Outcome {
+    static func drop(_ s: Session, _ text: String) -> Outcome {
         guard validThread(s.sessionId) else { return .refused("Not an Amp thread id") }
         guard text.utf8.count <= 60_000 else { return .refused("Prompt is too long for Amp (60 KB at most)") }
         guard let beat = s.heartbeat, Date().timeIntervalSince1970 - beat < 15 else {
@@ -32,9 +32,9 @@ package enum Inbox {
         return .inbox(id)
     }
 
-    package enum State: Equatable { case unclaimed, claimed, delivered, failed(String) }
+    enum State: Equatable { case unclaimed, claimed, delivered, failed(String) }
 
-    package static func state(thread: String, id: String) -> State {
+    static func state(thread: String, id: String) -> State {
         let dir = root.appendingPathComponent(thread)
         let receipt = dir.appendingPathComponent("receipts/\(id)")
         if FileManager.default.fileExists(atPath: receipt.path) {
@@ -63,7 +63,7 @@ package enum Inbox {
     }
 
     /// Takes back a file nobody claimed. False when the plugin claimed it first.
-    package static func withdraw(thread: String, id: String) -> Bool {
+    static func withdraw(thread: String, id: String) -> Bool {
         let dir = root.appendingPathComponent(thread)
         let held = dir.appendingPathComponent(".\(id).withdrawn")
         guard rename(dir.appendingPathComponent("\(id).json").path, held.path) == 0 else { return false }
