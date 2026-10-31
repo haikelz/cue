@@ -45,8 +45,9 @@ package enum SelfTest {
               Delivery.sanitize("a\u{200B}b\u{202E}c\u{2066}d\u{061C}e\u{E0041}f\u{E0100}g\u{2028}h") == "abcdefgh")
         check("sanitize keeps line breaks and emoji", Delivery.sanitize("one\ntwo 👍🏽") == "one\ntwo 👍🏽")
         check("trailing backslash gets a space", Delivery.sanitize("path\\") == "path\\ ")
-        check("items: 450 characters make 3 chunks", Delivery.items(String(repeating: "x", count: 450)).map(\.count) == [200, 200, 50])
-        check("items: line break marker between lines", Delivery.items("a\nb") == ["a", "\u{1}", "b"])
+        check("keys: 450 characters make 3 chunks", Delivery.keys(String(repeating: "x", count: 450)).map(\.count) == [200, 200, 50])
+        check("keys: Option+Return between lines", Delivery.keys("a\nb") == [[0x61], Key.lineBreak, [0x62]])
+        check("keys: chunks count characters, not bytes", Delivery.keys(String(repeating: "é", count: 201)).map(\.count) == [400, 2])
 
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("relay-selftest-\(getpid())")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

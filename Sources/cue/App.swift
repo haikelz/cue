@@ -232,9 +232,27 @@ final class Model: ObservableObject {
     func open(_ s: Session) {
         let key = s.rowKey
         worker.async {
-            let error = Delivery.open(s)
-            DispatchQueue.main.async { self.notes[key] = error }
+            let result = Result { () throws(DeliveryError) in try Delivery.open(s) }
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let apps): self.notes[key] = Self.activate(apps) ? nil : "Couldn't find the terminal app showing this tmux session"
+                case .failure(let error): self.notes[key] = error.message
+                }
+            }
         }
+    }
+
+    /// Brings forward the first of `apps` that is a GUI app. Nothing to do counts as done.
+    private static func activate(_ apps: [AppRef]) -> Bool {
+        guard !apps.isEmpty else { return true }
+        for app in apps {
+            let running = switch app {
+            case .pid(let pid): NSRunningApplication(processIdentifier: pid)
+            case .bundle(let id): NSRunningApplication.runningApplications(withBundleIdentifier: id).first
+            }
+            if let running, running.activationPolicy == .regular { return running.activate() }
+        }
+        return false
     }
 
     private func finish(_ s: Session, key: String, text: String, outcome: Outcome) {
