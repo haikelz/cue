@@ -37,9 +37,10 @@ rewrite() {
 swift build -c release
 # Build the bundle beside the old one and swap them, so hooks never find the binary missing.
 rm -rf "$APP.new" "$APP.old"
-mkdir -p "$APP.new/Contents/MacOS"
+mkdir -p "$APP.new/Contents/MacOS" "$APP.new/Contents/Resources"
 cp .build/release/cue "$APP.new/Contents/MacOS/cue"
 cp Info.plist "$APP.new/Contents/Info.plist"
+cp assets/AppIcon.icns assets/menubar.pdf "$APP.new/Contents/Resources/"
 codesign --force --sign - "$APP.new"
 pkill -xf "$BIN" 2>/dev/null || true  # the app only; hook runs carry arguments
 if [ -d "$APP" ]; then mv "$APP" "$APP.old"; fi

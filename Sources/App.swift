@@ -34,7 +34,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.image = NSImage(systemSymbolName: "terminal", accessibilityDescription: "Cue")
+        // Cue's mark from the bundle, drawn as a template so it follows the menubar's light or dark look.
+        // A build run from .build/ has no bundle resources and shows the SF Symbol instead.
+        let mark = Bundle.main.url(forResource: "menubar", withExtension: "pdf").flatMap(NSImage.init(contentsOf:))
+        mark?.isTemplate = true
+        mark?.size = NSSize(width: 19.4, height: 16)
+        mark?.accessibilityDescription = "Cue"
+        item.button?.image = mark ?? NSImage(systemSymbolName: "terminal", accessibilityDescription: "Cue")
         item.button?.imagePosition = .imageLeading
         item.button?.target = self
         item.button?.action = #selector(clicked)
