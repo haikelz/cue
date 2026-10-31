@@ -147,6 +147,21 @@ check "message passed with =, dash intact" "$(sed -n 3p $CUE_DIR/codex-args)" "-
 check "codex runs with the install-time PATH" "$(sed -n 4p $CUE_DIR/codex-args)" "PATH=/opt/test/bin:/usr/bin:/bin"
 cx UserPromptSubmit '"turn_id":"turn-3","prompt":"busy"' > /dev/null
 check "send to working Codex is queued" "$("$BIN" send $X 'next task' 2>&1)" queued
+# The footer's hook check, against a fake `codex app-server` that answers with $CUE_DIR/listing.
+print -r -- '#!/bin/sh
+read -r a; read -r b; read -r c
+printf "%s\n" "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}"; cat "$CUE_DIR/listing"' > $fake
+hooks() {  # hooks <trust status of the last of seven>
+  local h='{"command":"'"'/x/cue' hook codex"'","enabled":true,"trustStatus":"trusted"}'
+  print -r -- "{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"data\":[{\"cwd\":\"/\",\"hooks\":[$h,$h,$h,$h,$h,$h,${h/trusted/$1}]}]}}" > $CUE_DIR/listing
+}
+hooks trusted
+check "Codex health: seven trusted hooks pass" "$("$BIN" codex-health /x/cue)" ok
+hooks modified
+check "Codex health: a changed hook needs review" "$("$BIN" codex-health /x/cue)" "Codex hooks need review: run /hooks in Codex"
+check "Codex health: another binary's hooks count as missing" "$("$BIN" codex-health /y/cue)" "Cue's Codex hooks are missing: run ./install.sh"
+print -r -- '{"jsonrpc":"2.0","id":2,"error":{"code":-32601,"message":"Method not found"}}' > $CUE_DIR/listing
+check "Codex health: an error reply stays quiet" "$("$BIN" codex-health /x/cue)" "no answer"
 rm $CUE_DIR/config.json
 check "send without a codex path refuses" "$("$BIN" send $X 'x' 2>&1)" "Cue doesn't know where codex is; run install.sh again"
 cx SessionEnd > /dev/null

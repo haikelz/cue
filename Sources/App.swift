@@ -97,6 +97,7 @@ final class Model: ObservableObject {
     @Published private(set) var busy: Set<String> = []
     @Published private(set) var hooksInstalled = false
     @Published private(set) var order: [String] = []
+    @Published private(set) var codexWarning: String?
     private var pending: [String: Pending] = [:]
     private var probing: Set<String> = []
     private var timer: Timer?
@@ -170,7 +171,32 @@ final class Model: ObservableObject {
             return a == 1 ? $0.updatedAt < $1.updatedAt : $0.project < $1.project
         }.map(\.sessionId)
         hooksInstalled = Self.hooksPresent()
+        checkCodexHooks()
         recheckStale()
+    }
+
+    private var codexStamp: [Double]?
+    private var checkingCodex = false
+
+    /// Asks Codex whether it trusts Cue's hooks, when hooks.json or config.toml changed since the last
+    /// answer. Takes a second or two, so it runs off the main thread and off the delivery queue.
+    private func checkCodexHooks() {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let stamp = [".codex/hooks.json", ".codex/config.toml"].map {
+            ((try? FileManager.default.attributesOfItem(atPath: home.appendingPathComponent($0).path))?[.modificationDate] as? Date)?
+                .timeIntervalSince1970 ?? 0
+        }
+        guard stamp != codexStamp, !checkingCodex, let exe = Bundle.main.executablePath else { return }
+        checkingCodex = true
+        DispatchQueue.global(qos: .utility).async {
+            let hooks = Codex.listHooks()
+            DispatchQueue.main.async {
+                self.checkingCodex = false
+                guard let hooks else { return }  // no answer: stay quiet, ask again next time
+                self.codexStamp = stamp
+                self.codexWarning = Codex.warning(hooks, command: Codex.command(exe: exe))
+            }
+        }
     }
 
     /// Whether you can type a prompt in this row right now.
@@ -332,12 +358,17 @@ struct PopoverView: View {
                 ScrollView { rowList }.frame(height: 600)
             }
             Divider()
-            HStack {
-                Label(model.hooksInstalled ? "Hooks installed" : "Hooks missing",
-                      systemImage: model.hooksInstalled ? "checkmark.circle" : "exclamationmark.triangle")
-                Spacer()
-                Text("⌃⌥Space opens Cue")
-                Button("Quit") { NSApp.terminate(nil) }.buttonStyle(.borderless)
+            VStack(alignment: .leading, spacing: 4) {
+                if let warning = model.codexWarning {
+                    Label(warning, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+                }
+                HStack {
+                    Label(model.hooksInstalled ? "Hooks installed" : "Hooks missing",
+                          systemImage: model.hooksInstalled ? "checkmark.circle" : "exclamationmark.triangle")
+                    Spacer()
+                    Text("⌃⌥Space opens Cue")
+                    Button("Quit") { NSApp.terminate(nil) }.buttonStyle(.borderless)
+                }
             }
             .font(.caption)
             .foregroundStyle(.secondary)

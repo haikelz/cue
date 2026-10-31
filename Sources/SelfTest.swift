@@ -75,6 +75,13 @@ enum SelfTest {
         check("codex exec rollout is skipped", !Codex.interactive(rollout("codex_exec")))
         check("a session without a rollout is skipped", !Codex.interactive(nil))
         check("a rollout not written yet counts as interactive", Codex.interactive(dir.appendingPathComponent("later.jsonl").path))
+        let cueHook = Codex.command(exe: "/Apps/Cue.app/Contents/MacOS/cue")
+        let trusted = Array(repeating: Codex.ListedHook(command: cueHook, enabled: true, trustStatus: "trusted"), count: 7)
+        check("Codex hook command quotes the path", Codex.command(exe: "/o'k/cue") == "'/o'\\''k/cue' hook codex")
+        check("Codex health: all seven trusted is fine", Codex.warning(trusted, command: cueHook) == nil)
+        check("Codex health: one untrusted needs review",
+              Codex.warning(Array(trusted.dropLast()) + [Codex.ListedHook(command: cueHook, enabled: true, trustStatus: "modified")], command: cueHook)?.contains("/hooks") == true)
+        check("Codex health: fewer than seven is missing", Codex.warning(Array(trusted.prefix(5)), command: cueHook)?.contains("missing") == true)
         check("Amp thread id accepted", Inbox.validThread("T-01a18a06-d728-70de-8d1e-8cc150b0f6fc"))
         check("path-like Amp thread id rejected", !Inbox.validThread("T-../../etc"))
         let tab = "64017D0C-B0FE-457C-A404-FFB5514233B0"
