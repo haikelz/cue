@@ -117,11 +117,11 @@ final class Model: ObservableObject {
         var inboxId: String?
     }
 
-    var waiting: Int { sessions.filter { $0.status != "working" && $0.deliverable }.count }
+    var waiting: Int { sessions.filter { $0.status != .working && $0.deliverable }.count }
 
     /// The popover header's count, such as "2 waiting · 1 working".
     var summary: String {
-        let working = sessions.filter { $0.status == "working" }.count
+        let working = sessions.filter { $0.status == .working }.count
         return [waiting > 0 ? "\(waiting) waiting" : nil, working > 0 ? "\(working) working" : nil]
             .compactMap { $0 }.joined(separator: " · ")
     }
@@ -142,47 +142,25 @@ final class Model: ObservableObject {
     func reload() {
         var live: [Session] = []
         for var s in Store.all() {
-            if Self.expired(s) {
+            if s.isExpired {
                 // Claude exited without SessionEnd (tab closed, crash), or a session went quiet for good.
                 // Re-check under the lock, so a resumed session that just rewrote this file keeps it.
-                _ = try? Store.locked { if let fresh = Store.read(s.sessionId), Self.expired(fresh) { Store.delete(s.sessionId) } }
+                _ = try? Store.locked { if let fresh = Store.read(s.sessionId), fresh.isExpired { Store.delete(s.sessionId) } }
                 continue
             }
-            if !Self.alive(s) { continue }  // hidden, not deleted: an Amp window that stopped beating may resume
-            if s.isClaude, s.status != "idle", s.interrupted { s = setIdle(s) { $0.status != "idle" && $0.interrupted } }
+            if !s.isAlive { continue }  // hidden, not deleted: an Amp window that stopped beating may resume
+            if s.agent == .claude, s.status != .idle, s.interrupted { s = setIdle(s) { $0.status != .idle && $0.interrupted } }
             live.append(s)
         }
         if live != sessions { sessions = live }
         settlePending()
     }
 
-    /// Amp files outlive a stopped heartbeat by an hour, so the app never races a plugin that resumes.
-    static func expired(_ s: Session) -> Bool {
-        s.agent == "amp" ? Date().timeIntervalSince1970 - (s.heartbeat ?? 0) > 3600 : !alive(s)
-    }
-
-    static func alive(_ s: Session) -> Bool {
-        let now = Date().timeIntervalSince1970
-        switch s.agent {
-        case "amp":
-            return now - (s.heartbeat ?? 0) < 30  // the plugin stopped: Amp quit or switched threads
-        case "codex":
-            // Codex sends SessionEnd once a thread sits unopened for 30 minutes. A day without any
-            // change covers a SessionEnd lost to a crash or reboot.
-            return now - max(s.updatedAt, s.transcriptModified ?? 0) < 86_400
-        default:
-            guard let pid = s.pid, let start = s.pidStart else { return true }  // PID unknown: keep until SessionEnd
-            return Proc(pid).map { abs($0.start - start) < 0.01 } ?? false
-        }
-    }
-
     /// Runs when the popover opens.
     func resort() {
-        let rank = ["needs_you": 0, "idle": 1, "working": 2]
         order = sessions.sorted {
-            let (a, b) = (rank[$0.status] ?? 3, rank[$1.status] ?? 3)
-            if a != b { return a < b }
-            return a == 1 ? $0.updatedAt < $1.updatedAt : $0.project < $1.project
+            if $0.status != $1.status { return $0.status.rank < $1.status.rank }
+            return $0.status == .idle ? $0.updatedAt < $1.updatedAt : $0.project < $1.project
         }.map(\.sessionId)
         hooksInstalled = Self.hooksPresent()
         checkCodexHooks()
@@ -215,13 +193,13 @@ final class Model: ObservableObject {
 
     /// Whether you can type a prompt in this row right now.
     func canType(_ s: Session) -> Bool {
-        s.deliverable && !busy.contains(s.rowKey) && (!s.isClaude || s.status != "needs_you")
+        s.deliverable && !busy.contains(s.rowKey) && (s.agent.queuesWhileBusy || s.status != .needsYou)
     }
 
     /// A row quiet at working for 15 s gets one look at its screen.
     private func recheckStale() {
         let now = Date().timeIntervalSince1970
-        for s in sessions where s.isClaude && s.deliverable && s.status == "working" && !probing.contains(s.sessionId)
+        for s in sessions where s.agent == .claude && s.deliverable && s.status == .working && !probing.contains(s.sessionId)
             && now - max(s.updatedAt, s.transcriptModified ?? 0) > 15 {
             probing.insert(s.sessionId)
             worker.async {
@@ -229,7 +207,7 @@ final class Model: ObservableObject {
                 DispatchQueue.main.async {
                     self.probing.remove(s.sessionId)
                     guard idle else { return }
-                    _ = self.setIdle(s) { $0.status == "working" && $0.updatedAt == s.updatedAt }
+                    _ = self.setIdle(s) { $0.status == .working && $0.updatedAt == s.updatedAt }
                     self.reload()
                 }
             }
@@ -238,7 +216,7 @@ final class Model: ObservableObject {
 
     func name(_ s: Session) -> String {
         let clash = sessions.filter { $0.project == s.project && $0.agent == s.agent }.count > 1
-        return "\(s.agentName) · \(s.project)" + (clash ? " · \(s.sessionId.prefix(s.agent == "amp" ? 6 : 4))" : "")
+        return "\(s.agent.name) · \(s.project)" + (clash ? " · \(s.sessionId.prefix(s.agent.idPrefix))" : "")
     }
 
     func send(_ s: Session) {
@@ -327,7 +305,7 @@ final class Model: ObservableObject {
         (try? Store.locked { () -> Session in
             guard var fresh = Store.read(s.sessionId) else { return s }
             guard stillTrue(fresh) else { return fresh }
-            fresh.status = "idle"
+            fresh.status = .idle
             fresh.updatedAt = Date().timeIntervalSince1970
             try Store.write(fresh)
             return fresh
@@ -445,24 +423,23 @@ struct RowView: View {
     var body: some View {
         let key = session.rowKey
         let target = session.deliverable
-        // Codex and Amp hold a prompt until the running turn ends; typing into Claude's tab needs it idle.
-        let queues = !session.isClaude
+        let queues = session.agent.queuesWhileBusy
         let canType = model.canType(session)
         let editing = focus.wrappedValue == session.sessionId
         let draft = Binding(get: { model.drafts[key, default: ""] }, set: { model.drafts[key] = $0 })
-        let canSend = canType && (queues || session.status == "idle") && !Delivery.sanitize(draft.wrappedValue).isEmpty
+        let canSend = canType && (queues || session.status == .idle) && !Delivery.sanitize(draft.wrappedValue).isEmpty
 
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 AgentIcon(agent: session.agent)
                 Text(model.name(session)).font(.headline).lineLimit(1)
                 Spacer(minLength: 8)
-                StatusBadge(status: target ? session.status : "none", since: session.updatedAt)
+                StatusBadge(status: target ? session.status : nil, since: session.updatedAt)
             }
             if let message = session.lastMessage, !message.isEmpty {
                 ReplyView(message: message, expanded: $expanded)
             }
-            if !target || session.isClaude && session.status == "needs_you" {
+            if !target || !queues && session.status == .needsYou {
                 // Nothing to type here yet: a line saying why, and the way to the terminal.
                 HStack(spacing: 8) {
                     Text(placeholder(target)).font(.callout).foregroundStyle(.secondary)
@@ -498,25 +475,24 @@ struct RowView: View {
         .animation(.easeOut(duration: 0.15), value: hovering)
     }
 
-    /// Codex hooks run in its daemon, so its tab is unknown; other rows need a tab or a pane.
-    private var canOpen: Bool { session.agent != "codex" && (session.itermSessionId != nil || session.tmuxPane != nil) }
+    private var canOpen: Bool { session.agent.canOpen && (session.itermSessionId != nil || session.tmuxPane != nil) }
 
     private func placeholder(_ target: Bool) -> String {
         if !target { return "Start Claude in iTerm2 or tmux to send from here" }
-        if session.isClaude { return session.status == "needs_you" ? "Answer in the terminal" : "Next prompt" }
-        return session.status == "idle" ? "Next prompt" : "Queue a prompt"
+        if !session.agent.queuesWhileBusy { return session.status == .needsYou ? "Answer in the terminal" : "Next prompt" }
+        return session.status == .idle ? "Next prompt" : "Queue a prompt"
     }
 }
 
 /// The agent as an SF Symbol in a tinted circle; the row title names it, so VoiceOver skips this.
 struct AgentIcon: View {
-    let agent: String
+    let agent: Agent
 
     var body: some View {
         let (symbol, color): (String, Color) = switch agent {
-        case "codex": ("curlybraces", .teal)
-        case "amp": ("bolt.fill", .purple)
-        default: ("sparkle", .orange)
+        case .claude: ("sparkle", .orange)
+        case .codex: ("curlybraces", .teal)
+        case .amp: ("bolt.fill", .purple)
         }
         Image(systemName: symbol)
             .font(.system(size: 10, weight: .bold))
@@ -621,24 +597,24 @@ struct PromptEditor: View {
 
 /// Status as macOS shows presence: a colored dot and text, or a small spinner while the agent works.
 struct StatusBadge: View {
-    let status: String
+    let status: Status?  // nil: a Claude session Cue can't type into
     let since: Double
 
     var body: some View {
         let (label, color): (String, Color) = switch status {
-        case "idle": ("Idle", .green)
-        case "needs_you": ("Needs you", .orange)
-        case "working": ("Working", .blue)
-        default: ("Read only", .gray)
+        case .idle: ("Idle", .green)
+        case .needsYou: ("Needs you", .orange)
+        case .working: ("Working", .blue)
+        case nil: ("Read only", .gray)
         }
         HStack(spacing: 5) {
-            if status == "working" {
+            if status == .working {
                 ProgressView().controlSize(.mini)
             } else {
                 Circle().fill(color).frame(width: 7, height: 7)
             }
             TimelineView(.periodic(from: .now, by: 1)) { _ in Text("\(label) · \(ago)") }
-                .foregroundStyle(status == "needs_you" ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
+                .foregroundStyle(status == .needsYou ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
         }
         .font(.caption)
     }

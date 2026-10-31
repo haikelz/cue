@@ -15,9 +15,9 @@ package enum Delivery {
         guard !text.isEmpty else { return .refused("Prompt is empty") }
         guard let s = Store.read(sessionId) else { return .refused("Session is gone") }
         switch s.agent {
-        case "codex": return queueToCodex(s, text)
-        case "amp": return Inbox.drop(s, text)
-        default: return typeIntoClaude(s, text)
+        case .claude: return typeIntoClaude(s, text)
+        case .codex: return queueToCodex(s, text)
+        case .amp: return Inbox.drop(s, text)
         }
     }
 
@@ -36,7 +36,7 @@ package enum Delivery {
         switch run(codex, ["queue", "--thread=\(s.sessionId)", "--message=\(text)"], env: env, timeout: 30) {
         // Exit 0 means Codex accepted the prompt. Waiting for UserPromptSubmit on top of that could only
         // turn a slow start into "Not confirmed" and invite a second, duplicate send.
-        case .success: return .accepted(s.status == "idle" ? "Sent" : "Queued")
+        case .success: return .accepted(s.status == .idle ? "Sent" : "Queued")
         case .failure(let e): return .failed("codex queue: \(e.message)")
         }
     }
@@ -117,7 +117,7 @@ package enum Delivery {
 
     /// Process checks, cheapest first. Returns why typing must not happen, or nil.
     package static func gate(_ s: Session) -> String? {
-        guard s.status == "idle" else { return s.status == "working" ? "Claude is working" : "Claude needs you in the terminal" }
+        guard s.status == .idle else { return s.status == .working ? "Claude is working" : "Claude needs you in the terminal" }
         guard let pid = s.pid, let p = Proc(pid), let start = s.pidStart, abs(p.start - start) < 0.01 else {
             return "Claude process is gone"
         }
