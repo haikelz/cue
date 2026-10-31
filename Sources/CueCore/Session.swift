@@ -1,7 +1,7 @@
 import Foundation
 
 /// The coding agents Cue knows, and the rules that differ between them. Adding an agent starts here:
-/// the compiler then points at every switch that needs a case for it.
+/// every rule is an exhaustive switch, so the compiler then stops at each one that needs a case.
 package enum Agent: String, Codable, Sendable {
     case claude, codex, amp
 
@@ -14,13 +14,36 @@ package enum Agent: String, Codable, Sendable {
     }
 
     /// Codex and Amp hold a prompt until the running turn ends; typing into Claude's terminal needs it idle.
-    package var queuesWhileBusy: Bool { self != .claude }
+    package var queuesWhileBusy: Bool {
+        switch self {
+        case .claude: false
+        case .codex, .amp: true
+        }
+    }
 
     /// Codex hooks run in its shared daemon, so a Codex session's terminal is unknown.
-    package var canOpen: Bool { self != .codex }
+    package var canOpen: Bool {
+        switch self {
+        case .claude, .amp: true
+        case .codex: false
+        }
+    }
 
     /// How much of the session id tells two rows of one agent in one folder apart.
-    package var idPrefix: Int { self == .amp ? 6 : 4 }
+    package var idPrefix: Int {
+        switch self {
+        case .claude, .codex: 4  // UUIDs
+        case .amp: 6  // "T-" and four hex digits
+        }
+    }
+
+    /// Whether the agent reports through `cue hook`. Amp reports through its plugin instead.
+    package var usesHooks: Bool {
+        switch self {
+        case .claude, .codex: true
+        case .amp: false
+        }
+    }
 }
 
 /// A session's state as its hooks or plugin report it. The raw values are the session file's.
@@ -59,10 +82,20 @@ package struct Session: Codable, Equatable, Sendable {
 
     /// Claude rows follow the iTerm2 tab or tmux pane, so a draft survives /clear starting a new session.
     /// Codex and Amp rows follow the session: several of their threads can share one tab.
-    package var rowKey: String { agent == .claude ? (itermSessionId ?? tmuxPane.map { (tmuxSocket ?? "") + $0 } ?? sessionId) : sessionId }
+    package var rowKey: String {
+        switch agent {
+        case .claude: itermSessionId ?? tmuxPane.map { (tmuxSocket ?? "") + $0 } ?? sessionId
+        case .codex, .amp: sessionId
+        }
+    }
 
     /// Claude prompts are typed into an iTerm2 tab or a tmux pane; Codex and Amp take them through their own channels.
-    package var deliverable: Bool { agent != .claude || tty != nil && (itermSessionId != nil || tmuxPane != nil) }
+    package var deliverable: Bool {
+        switch agent {
+        case .claude: tty != nil && (itermSessionId != nil || tmuxPane != nil)
+        case .codex, .amp: true
+        }
+    }
 
     /// Whether the session still runs. A Claude session lives as long as its process; Codex sends
     /// SessionEnd once a thread sits unopened for 30 minutes, and a day without any change covers one
@@ -83,7 +116,10 @@ package struct Session: Codable, Equatable, Sendable {
     /// Whether the session file can go. Amp files outlive a stopped heartbeat by an hour, so the app
     /// never races a plugin that resumes; a hidden Amp row comes back when its window beats again.
     package var isExpired: Bool {
-        agent == .amp ? Date().timeIntervalSince1970 - (heartbeat ?? 0) > 3600 : !isAlive
+        switch agent {
+        case .claude, .codex: !isAlive
+        case .amp: Date().timeIntervalSince1970 - (heartbeat ?? 0) > 3600
+        }
     }
 
     package var project: String { URL(fileURLWithPath: cwd).lastPathComponent }

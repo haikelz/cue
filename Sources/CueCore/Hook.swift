@@ -6,8 +6,7 @@ package enum Hook {
     package static func run(_ name: String) -> Never {
         var out: Data?
         do {
-            // Amp reports through its plugin, not hooks.
-            guard let agent = Agent(rawValue: name), agent != .amp else { throw HookError.unknownAgent }
+            guard let agent = Agent(rawValue: name), agent.usesHooks else { throw HookError.unknownAgent }
             out = try handle(FileHandle.standardInput.readDataToEndOfFile(), agent: agent)
         } catch {
             log("\(name): \(error)")
