@@ -23,9 +23,7 @@ final class AppModel {
     let monitor: SessionMonitor
     private(set) var rowStates: [String: RowState] = [:]
     private(set) var order: [String] = []
-    /// osascript, tmux and codex calls block, so they run one at a time here, off the main thread and off Swift's task pool.
-    @ObservationIgnored private let worker = DispatchQueue(label: "cue.worker")
-    @ObservationIgnored private var timer: Timer?
+    @ObservationIgnored private let worker = Worker("cue.worker")
 
     var sessions: [Session] { monitor.sessions }
 
@@ -46,10 +44,12 @@ final class AppModel {
     init() {
         monitor = SessionMonitor(worker: worker)
         resort()
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.monitor.reload()
-                self?.settlePending()
+        // Every second: reread the session files and settle prompts waiting for proof.
+        Task { [weak self] in
+            while let self, !Task.isCancelled {
+                monitor.reload()
+                settlePending()
+                try? await Task.sleep(for: .seconds(1))
             }
         }
     }
@@ -81,23 +81,21 @@ final class AppModel {
         let key = s.rowKey, text = row(key).draft
         rowStates[key, default: RowState()].sending = true
         rowStates[key]?.note = "Sending…"
-        worker.async {
-            let outcome = Delivery.send(sessionId: s.sessionId, text: text)
-            DispatchQueue.main.async { self.finish(s, key: key, text: text, outcome: outcome) }
+        Task {
+            let outcome = await worker.run { Delivery.send(sessionId: s.sessionId, text: text) }
+            finish(s, key: key, text: text, outcome: outcome)
         }
     }
 
     func open(_ s: Session) {
         let key = s.rowKey
-        worker.async {
-            let result = Result { () throws(DeliveryError) in try Delivery.open(s) }
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let apps):
-                    self.rowStates[key, default: RowState()].note = Self.activate(apps) ? nil : "Couldn't find the terminal app showing this tmux session"
-                case .failure(let error):
-                    self.rowStates[key, default: RowState()].note = error.message
-                }
+        Task {
+            let result = await worker.run { Result { () throws(DeliveryError) in try Delivery.open(s) } }
+            switch result {
+            case .success(let apps):
+                rowStates[key, default: RowState()].note = Self.activate(apps) ? nil : "Couldn't find the terminal app showing this tmux session"
+            case .failure(let error):
+                rowStates[key, default: RowState()].note = error.message
             }
         }
     }

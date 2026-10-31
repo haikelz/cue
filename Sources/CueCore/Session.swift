@@ -39,7 +39,7 @@ package enum Status: String, Codable, Sendable {
 }
 
 /// One agent session, as its hook or plugin last saw it. Stored as one JSON file per session.
-package struct Session: Codable, Equatable {
+package struct Session: Codable, Equatable, Sendable {
     package var sessionId: String
     package var agent: Agent
     package var cwd: String

@@ -1,6 +1,6 @@
 import Foundation
 
-package enum Outcome {
+package enum Outcome: Sendable {
     case sent(at: Double)  // the turn should start; `last_prompt_at` confirms it
     case accepted(String)  // the agent took the prompt itself; the note says "Sent" or "Queued"
     case inbox(String)     // Amp: dropped in the inbox under this id; a receipt confirms it

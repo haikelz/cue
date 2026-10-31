@@ -30,7 +30,7 @@ package enum Codex {
         "'" + exe.replacingOccurrences(of: "'", with: "'\\''") + "' hook codex"
     }
 
-    package struct ListedHook: Decodable { let command: String?; let enabled: Bool?; let trustStatus: String? }
+    package struct ListedHook: Decodable, Sendable { let command: String?; let enabled: Bool?; let trustStatus: String? }
 
     /// A JSON-RPC message from `codex app-server`; the `hooks/list` answer carries hooks grouped by folder.
     private struct Reply: Decodable {

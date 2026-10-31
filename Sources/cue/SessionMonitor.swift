@@ -10,12 +10,14 @@ final class SessionMonitor {
     private(set) var sessions: [Session] = []
     private(set) var hooksInstalled = false
     private(set) var codexWarning: String?
-    @ObservationIgnored private let worker: DispatchQueue
+    @ObservationIgnored private let worker: Worker
+    /// The Codex check takes a second or two, so it gets its own queue and never delays a send.
+    @ObservationIgnored private let codexWorker = Worker("cue.codex", qos: .utility)
     @ObservationIgnored private var probing: Set<String> = []
     @ObservationIgnored private var codexStamp: [Double]?
     @ObservationIgnored private var checkingCodex = false
 
-    init(worker: DispatchQueue) {
+    init(worker: Worker) {
         self.worker = worker
         reload()
     }
@@ -50,14 +52,12 @@ final class SessionMonitor {
         for s in sessions where s.agent == .claude && s.deliverable && s.status == .working && !probing.contains(s.sessionId)
             && now - max(s.updatedAt, s.transcriptModified ?? 0) > 15 {
             probing.insert(s.sessionId)
-            worker.async {
-                let idle = Delivery.looksIdle(s)
-                DispatchQueue.main.async {
-                    self.probing.remove(s.sessionId)
-                    guard idle else { return }
-                    _ = self.setIdle(s) { $0.status == .working && $0.updatedAt == s.updatedAt }
-                    self.reload()
-                }
+            Task {
+                let idle = await worker.run { Delivery.looksIdle(s) }
+                probing.remove(s.sessionId)
+                guard idle else { return }
+                _ = setIdle(s) { $0.status == .working && $0.updatedAt == s.updatedAt }
+                reload()
             }
         }
     }
@@ -75,8 +75,7 @@ final class SessionMonitor {
         }) ?? s
     }
 
-    /// Asks Codex whether it trusts Cue's hooks, when hooks.json or config.toml changed since the last
-    /// answer. Takes a second or two, so it runs off the main thread and off the delivery queue.
+    /// Asks Codex whether it trusts Cue's hooks, when hooks.json or config.toml changed since the last answer.
     private func checkCodexHooks() {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let stamp = [".codex/hooks.json", ".codex/config.toml"].map {
@@ -85,14 +84,12 @@ final class SessionMonitor {
         }
         guard stamp != codexStamp, !checkingCodex, let exe = Bundle.main.executablePath else { return }
         checkingCodex = true
-        DispatchQueue.global(qos: .utility).async {
-            let hooks = Codex.listHooks()
-            DispatchQueue.main.async {
-                self.checkingCodex = false
-                guard let hooks else { return }  // no answer: stay quiet, ask again next time
-                self.codexStamp = stamp
-                self.codexWarning = Codex.warning(hooks, command: Codex.command(exe: exe))
-            }
+        Task {
+            let hooks = await codexWorker.run { Codex.listHooks() }
+            checkingCodex = false
+            guard let hooks else { return }  // no answer: stay quiet, ask again next time
+            codexStamp = stamp
+            codexWarning = Codex.warning(hooks, command: Codex.command(exe: exe))
         }
     }
 
