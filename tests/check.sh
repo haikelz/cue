@@ -16,6 +16,8 @@ ev() { hook "{\"hook_event_name\":\"$1\",\"session_id\":\"${3:-$ID}\",\"cwd\":\"
 field() { jq -r ".$1" "$CUE_DIR/sessions/${2:-$ID}.json" 2>/dev/null; }
 check() { if [[ "$2" == "$3" ]]; then print "ok    $1"; else print "FAIL  $1: got '$2', want '$3'"; fails=$((fails+1)); fi; }
 
+check "an unknown command word prints usage instead of starting the app" "$("$BIN" bogus 2>/dev/null; print $?)" 64
+
 out=$(ev SessionStart '"source":"startup"')
 check "SessionStart registers idle" "$(field status)" idle
 check "SessionStart prints nothing" "$out" ""

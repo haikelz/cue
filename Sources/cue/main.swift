@@ -15,6 +15,10 @@ case "codex-health":
     let exe = CommandLine.arguments.dropFirst(2).first ?? Bundle.main.executablePath ?? ""
     print(Codex.listHooks().map { Codex.warning($0, command: Codex.command(exe: exe)) ?? "ok" } ?? "no answer")
     exit(0)
+case let word? where !word.hasPrefix("-"):
+    // An unknown word must not start a second copy of the app. (`open` and AppKit defaults pass flags.)
+    FileHandle.standardError.write(Data("usage: cue [hook claude|codex | send <session-id> <text> | selftest | codex-health [cue path]]\n".utf8))
+    exit(64)
 default:
     signal(SIGPIPE, SIG_IGN)
     CueApp.main()
