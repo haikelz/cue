@@ -30,31 +30,9 @@ package enum Delivery {
         guard let s = Store.read(sessionId) else { return .refused("Session is gone") }
         switch s.agent {
         case .claude: return typeIntoClaude(s, text)
-        case .codex: return queueToCodex(s, text)
+        case .codex: return Codex.queue(s, text)
         case .amp: return Inbox.drop(s, text)
         }
-    }
-
-    /// `codex queue` hands the prompt to Codex's daemon, which runs it now or after the current turn.
-    /// The `=` forms keep a prompt that starts with "-" from parsing as a flag.
-    package static func queueToCodex(_ s: Session, _ text: String) -> Outcome {
-        let config = Config.load()
-        guard let codex = config.codex, FileManager.default.isExecutableFile(atPath: codex) else {
-            return .refused("Cue doesn't know where codex is; run install.sh again")
-        }
-        guard s.sessionId.range(of: #"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"#, options: .regularExpression) != nil else {
-            return .refused("Not a Codex session id")
-        }
-        var env = ProcessInfo.processInfo.environment
-        if let path = config.path { env["PATH"] = path }
-        do {
-            _ = try Command.run(codex, ["queue", "--thread=\(s.sessionId)", "--message=\(text)"], env: env, timeout: 30)
-        } catch {
-            return .failed("codex queue: \(error.message)")
-        }
-        // Exit 0 means Codex accepted the prompt. Waiting for UserPromptSubmit on top of that could only
-        // turn a slow start into "Not confirmed" and invite a second, duplicate send.
-        return .accepted(s.status == .idle ? "Sent" : "Queued")
     }
 
     /// Types the prompt into the session's iTerm2 tab or tmux pane, then presses Return, each step behind the full set of checks.
