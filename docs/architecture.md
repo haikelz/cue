@@ -22,6 +22,7 @@ One binary does all of it. `main.swift` picks the mode before AppKit loads, whic
 | `cue hook claude` | Handle one Claude Code hook event from stdin |
 | `cue hook codex` | Handle one Codex hook event from stdin; always prints JSON |
 | `cue send <session-id> <text>` | The app's send path from the command line |
+| `cue open <session-id>` | The app's Open path from the command line: `opened`, the apps to bring forward, or why not |
 | `cue codex-health [cue path]` | The footer's Codex hook check: `ok`, the warning, or `no answer` |
 
 ## Agents at a glance
@@ -33,7 +34,7 @@ One binary does all of it. `main.swift` picks the mode before AppKit loads, whic
 | Delivery | Typed into the iTerm2 tab or tmux pane | `codex queue` | Inbox file, appended by the plugin |
 | Confirmation | `last_prompt_at` within 5 s | `codex queue` exit 0: "Sent", or "Queued" during a turn | A receipt from the plugin |
 | Liveness | PID and start time | `SessionEnd`, a newer session in the same folder, or 24 h without change | Heartbeat younger than 30 s; the file goes after an hour |
-| Open | The iTerm2 tab, or the tmux pane and its terminal app | No; the tab is unknown | Yes, from the plugin's `ITERM_SESSION_ID` |
+| Open | The iTerm2 tab, or the tmux pane and its terminal app | No; the tab is unknown | The iTerm2 tab, or the tmux pane, from the plugin's environment |
 
 ## Session tracking
 
@@ -41,7 +42,7 @@ One binary does all of it. `main.swift` picks the mode before AppKit loads, whic
 
 `install.sh` registers `cue hook claude` in exec form (no shell) with a 5-second timeout for `SessionStart`, `UserPromptSubmit`, `PostToolUse`, `PostToolUseFailure`, `PermissionRequest`, `Elicitation`, `ElicitationResult`, `Stop`, `StopFailure`, `SessionEnd`, and `Notification` with matcher `idle_prompt`.
 
-Hook mode never fails a hook: it exits 0 on any error, logs to `~/.cue/hook.log`, and prints nothing except the notification JSON on `Stop` and `StopFailure`.
+Hook mode never fails a hook: it exits 0 on any error, logs to `~/.cue/hook.log`, and prints nothing except the terminal banner JSON on `Stop` and `StopFailure`, and only while the Cue app isn't posting notifications itself.
 
 ### Codex hooks
 
@@ -59,8 +60,8 @@ Codex keys hook trust by list position and a hash, so another tool that reorders
 | `UserPromptSubmit` | `working` | Stamps `last_prompt_at` and, for Codex, the turn id |
 | `PostToolUse`, `PostToolUseFailure`, `ElicitationResult` | `working`, if not already | No write while working, which keeps the hot path cheap |
 | `PermissionRequest`, `Elicitation` | `needs_you` | Fires before the dialog draws |
-| `Stop` | `idle` | Stores the first 4,000 characters of `last_assistant_message`; Claude also gets the notification |
-| `StopFailure` (Claude) | `idle` | Stores `API error: <type>`; returns the notification |
+| `Stop` | `idle` | Stores the first 4,000 characters of `last_assistant_message` and stamps `finished_at`; Claude also gets the fallback banner |
+| `StopFailure` (Claude) | `idle` | Stores `API error: <type>` and stamps `finished_at`; returns the fallback banner |
 | `Interrupt` (Codex) | `idle` | Esc in Codex |
 | `Notification` (`idle_prompt`, Claude) | `idle`, from `working` | A second idle signal |
 | `SessionEnd` | File deleted | Row disappears |
@@ -83,7 +84,7 @@ stateDiagram-v2
 `~/.config/amp/plugins/cue.ts` starts nothing when it loads, because `amp plugins list` loads plugins in a short-lived process. It attaches to `amp.activeThread`, the thread you have open in that Amp window, and moves with it when you switch threads. Amp's observables report later values only, so the plugin also reads `activeThread.current` and the thread's `state.get()` when it loads:
 
 - It follows the thread's state and writes the session file: `running` to working, `awaiting-approval` to needs_you, `idle` to idle, `error` to idle with "Error".
-- On `agent.end`, it stores the last assistant text and posts the finish notification by writing OSC 9 to the tty of the Amp process above it. It looks the tty up on first attach and writes without blocking, so a paused terminal can't stall it.
+- On `agent.end`, it stores the last assistant text and stamps `finished_at` (unless the turn was cancelled). While the Cue app isn't posting notifications, it also writes the fallback banner as OSC 9 to the tty of the Amp process above it, looked up on first attach and written without blocking, so a paused terminal can't stall it.
 - It records the Amp process id, `ITERM_SESSION_ID` and `PWD` from its environment, and rewrites a `heartbeat` every 5 seconds. The app hides the row after 30 seconds of silence, refuses a send after 15, and deletes the file after an hour, so it never races a plugin that resumes.
 - Every second, it drains its own thread's inbox (below). When it stops, it deletes its session file, provided the file still names its Amp process: a second window on the same thread keeps the row.
 
@@ -99,11 +100,12 @@ stateDiagram-v2
 | `status` | Status rules | `working`, `idle` or `needs_you` |
 | `last_message` | `Stop`, `StopFailure`, `agent.end` | Row preview and notification text |
 | `last_prompt_at` | `UserPromptSubmit` or `agent.start` time | Send confirmation |
+| `finished_at` | `Stop`, `StopFailure`, or `agent.end` unless cancelled | "Finished" notifications; Esc and interrupts don't set it |
 | `updated_at` | Each status change | Badge time, recovery checks |
 | `pid`, `pid_start` | Claude: the `claude` process above the hook; Amp: the Amp process | Liveness; the start time guards against PID reuse |
 | `tty` | Claude's controlling terminal | Matches the iTerm2 tab or tmux pane before typing |
 | `iterm_session_id` | `ITERM_SESSION_ID`, dropped when `TMUX` is set | The tab to type into, and Open |
-| `tmux_socket`, `tmux_pane` | Claude inside tmux: the socket part of `$TMUX`, and `$TMUX_PANE` | The pane to type into, and Open |
+| `tmux_socket`, `tmux_pane` | Claude or Amp inside tmux: the socket part of `$TMUX`, and `$TMUX_PANE` | The pane to type into (Claude), and Open |
 | `transcript_path` | Hook input | Claude interrupt detection, Codex originator and activity |
 | `turn_id` | Codex `UserPromptSubmit` | Filters Codex subagent events |
 | `heartbeat` | Amp plugin | Amp liveness |
@@ -181,6 +183,14 @@ The plugin checks each inbox file before trusting it: a name of the form `<uuid>
 | Codex hook timeout | 3 s | Codex caps some events at 3 s; a hook run takes about 6 ms |
 | Lock wait | 50 tries, 10 ms apart | A stuck lock holder can't hang a hook or the app |
 
+## Notifications
+
+The app posts notifications itself, for every agent and terminal. Each second, after it rereads the session files, `Notifier` compares each session with the last poll: a `finished_at` that moved posts "‹agent · project› finished" with the reply's first line ("stopped" for an API error), and a move into `needs_you` posts "needs you". A session seen for the first time only sets the baseline, so starting Cue doesn't replay old turns. Each notification uses the session id as its identifier, so a newer one replaces the older, and a click opens the popover on that session.
+
+The terminal banner (OSC 9) stays as the fallback. While macOS lets Cue notify, Cue keeps its process id in `~/.cue/notifier.pid`; the Claude hook and the Amp plugin skip their banner while that process runs and is Cue, so a file left by a crash brings the banner back. Cue rechecks its permission each time the popover opens and releases the file when you turn its notifications off or quit.
+
+Cue registers itself as a login item through `SMAppService`, on by default. Each reinstall changes its ad-hoc signature, so Cue registers again at launch while the gear menu's Open at Login is on.
+
 ## The menubar app
 
 An `NSStatusItem` with an `NSPopover` holds the UI; SwiftUI's `MenuBarExtra` can't open from code, which the hotkey needs. ⌃⌥Space comes from Carbon's `RegisterEventHotKey`, which needs no Accessibility permission. Each time the popover opens, the app re-sorts the rows and puts the cursor in the first row you can type in. Only the row being edited owns ⌘Return, and one reply expands at a time.
@@ -195,7 +205,8 @@ Two targets build one binary. `CueCore` imports Foundation only and holds everyt
 | Storage | `Store`, `Config`, `Proc` | Session files, the lock, install-time paths, process facts |
 | Reporting | `Hook` | Turns a hook event into a session file update |
 | Delivery | `Delivery`, `Terminal` (`ITermTab`, `TmuxPane`), `Codex`, `Inbox` | Sends a prompt through the session's agent; Claude's safety checks run once, on any `Terminal` |
-| App | `SessionMonitor`, `AppModel`, `Worker` | Polls the files and repairs rows; holds what the popover shows; runs blocking calls |
+| Notifications | `Alert`, `NotifierFile` (CueCore); `Notifier` (app) | Which change notifies and what it says; who posts the banner |
+| App | `SessionMonitor`, `AppModel`, `Worker`, `LoginItem` | Polls the files and repairs rows; holds what the popover shows; runs blocking calls; the login item |
 | UI | `AppDelegate`, `PopoverView`, `RowView` | The menubar item, the popover, a row |
 
 The app follows a plain Model–View shape: two `@Observable` models on the main actor, and SwiftUI views that read `AppModel` from the environment. `SessionMonitor` owns the session list and the background checks; `AppModel` owns UI state, one `RowState` per row (draft, note, sending, pending confirmation). Delivery steps throw a typed `DeliveryError` (`closed`, `moved`, `refused`, `failed`), and `Delivery` turns it into the row's `Outcome`.
@@ -223,6 +234,7 @@ Live sessions reload `~/.claude/settings.json` and `~/.codex/hooks.json` when th
 | `~/.cue/sessions/*.json` | One file per session |
 | `~/.cue/inbox/‹thread›/` | Amp prompts waiting for the plugin, and its receipts |
 | `~/.cue/config.json` | The `codex` and `tmux` paths and PATH from install time |
+| `~/.cue/notifier.pid` | The app's process id, while it posts notifications; hooks and the Amp plugin then skip their banner |
 | `~/.cue/hook.log` | Hook errors |
 | `~/.cue/.lock` | The lock file |
 | `*.cue-backup-*` | Settings backups beside `~/.claude/settings.json` and `~/.codex/hooks.json`, the last three of each |

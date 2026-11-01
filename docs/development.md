@@ -8,7 +8,8 @@
 | `Sources/CueCore/Session.swift` | `Session`, and the `Agent` and `Status` enums: the rules that differ between agents, liveness, Claude interrupt detection |
 | `Sources/CueCore/Store.swift` | The session files, the lock, and `config.json` |
 | `Sources/CueCore/Proc.swift` | Process facts from `sysctl` |
-| `Sources/CueCore/Hook.swift` | Hook mode for Claude Code and Codex: event to status, notification output |
+| `Sources/CueCore/Hook.swift` | Hook mode for Claude Code and Codex: event to status, the fallback banner |
+| `Sources/CueCore/Alert.swift` | Which session change notifies and what it says; the `notifier.pid` handshake |
 | `Sources/CueCore/Codex.swift` | `codex queue`, which Codex sessions are interactive, and the hook health check |
 | `Sources/CueCore/Delivery.swift` | Sending: the agent switch, Claude typing with its checks, `sanitize`, key chunks, `DeliveryError` |
 | `Sources/CueCore/Terminal.swift` | The `Terminal` protocol and its two terminals, `ITermTab` (AppleScript) and `TmuxPane` (tmux CLI) |
@@ -20,8 +21,10 @@
 | `Sources/cue/AppModel.swift` | The popover's state: sort order, one `RowState` per row, sending and confirmation |
 | `Sources/cue/Worker.swift` | A serial queue behind an async API, for blocking calls |
 | `Sources/cue/PopoverView.swift`, `RowView.swift` | The SwiftUI views |
+| `Sources/cue/Notifier.swift` | Posts notifications and opens the popover on a click |
+| `Sources/cue/LoginItem.swift` | The login item, through `SMAppService` |
 | `Sources/cue/HotKey.swift` | The ⌃⌥Space global shortcut |
-| `Sources/cue/SendCommand.swift` | `cue send` |
+| `Sources/cue/SendCommand.swift` | `cue send` (`cue open` and `codex-health` live in `main.swift`) |
 | `tests/CueCoreTests/` | swift-testing suites for CueCore, with real Claude Code screen captures |
 | `plugins/amp/cue.ts` | The Amp plugin; `drainInbox` is exported for the tests |
 | `Info.plist` | Bundle id, `LSUIElement`, the app icon, the Automation usage string |
@@ -62,7 +65,7 @@ swift test        # CueCore's unit tests
 tests/check.sh    # those, then the built binary's behavior
 ```
 
-`swift test` runs the swift-testing suites in `tests/CueCoreTests`: the screen checks against real Claude Code captures, `sanitize` and key chunks, the agent rules, liveness, the session file format, which terminal a session types into, Claude interrupt detection, and the Codex checks. The Command Line Tools include swift-testing, so Xcode isn't needed.
+`swift test` runs the swift-testing suites in `tests/CueCoreTests`: the notification rules, Claude typing against a fake terminal, the screen checks against real Claude Code captures, `sanitize` and key chunks, the agent rules, liveness, the session file format, which terminal a session types into, Claude interrupt detection, and the Codex checks. The Command Line Tools include swift-testing, so Xcode isn't needed.
 
 `tests/check.sh` runs `swift test`, then, with `CUE_DIR` set to a temp folder:
 
@@ -82,7 +85,7 @@ tests/e2e.sh
 Opens iTerm2 windows and drives real sessions through `cue send`:
 
 - **Claude Code** (two sessions): a one-line prompt, a send over a half-typed draft, a 5-line prompt, a permission dialog, a forced-idle file during that dialog, the Ctrl+G editor, Ctrl+Z, and a closed tab.
-- **Claude Code in tmux**, in a detached session on a private socket: a confirmed send, copy mode and synchronized panes refused, a two-line prompt with a line ending in `;` over a half-typed draft, Ctrl+Z, and a killed server.
+- **Claude Code in tmux**, in a detached session on a private socket: a confirmed send, copy mode and synchronized panes refused, Open with no client and with its client in an iTerm2 tab, a two-line prompt with a line ending in `;` over a half-typed draft, Ctrl+Z, and a killed server.
 - **Amp**, when the installed plugin matches `plugins/amp/cue.ts`: registration, delivery, a send during a running turn, and the heartbeat stopping after the window closes.
 - **Codex**, when Cue's hooks are in `~/.codex/hooks.json` and trusted: registration, a confirmed send, and a queued send during a running turn.
 
@@ -95,6 +98,7 @@ jq -c '{agent, cwd, status, updated_at}' ~/.cue/sessions/*.json         # what t
 tail ~/.cue/hook.log                                                     # hook errors
 echo '{"hook_event_name":"Stop","session_id":"x","cwd":"/tmp"}' | CUE_DIR=/tmp/c .build/release/cue hook claude
 .build/release/cue send <session-id> "Reply with PONG"                   # exit 0 delivered, 1 refused, 2 unconfirmed
+.build/release/cue open <session-id>                                     # what Open does, without the app
 .build/release/cue codex-health ~/Applications/Cue.app/Contents/MacOS/cue   # what the footer says about Codex hooks
 ls -la ~/.cue/inbox/*/                                                   # Amp prompts not yet claimed
 ```

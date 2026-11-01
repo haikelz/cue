@@ -27,7 +27,7 @@ The header shows a count such as "2 waiting · 1 working". Each session is a rou
 - **Send**, and the **Open** arrow for Claude Code and Amp rows.
 - **A note** under the prompt box when something needs your attention. See [Row messages](#row-messages).
 
-The footer shows whether Cue's hooks are installed, a reminder of ⌃⌥Space, and the Quit button (⌘Q). Above it, an orange banner appears when Codex won't run Cue's hooks:
+The footer shows whether Cue's hooks are installed, a reminder of ⌃⌥Space, and a gear menu with **Open at Login** and **Quit Cue** (⌘Q). Cue opens at login unless you turn that off there. Above the footer, an orange banner appears when Codex won't run Cue's hooks:
 
 | Warning | What to do |
 | --- | --- |
@@ -66,22 +66,20 @@ Prompts that start with `/` (slash commands) or `!` (shell commands) behave as i
 
 ## Opening a session
 
-**Open** brings the session's iTerm2 window and tab to the front. For a session in tmux, it selects the pane in tmux and brings forward the terminal app showing that tmux session; with several windows open, that app's front window comes up, which may not be the one holding the pane. Use Open to answer a permission dialog. Codex rows have no Open: Codex runs hooks in a shared background process, so Cue can't tell which tab a Codex session lives in.
+**Open** brings the session's iTerm2 window and tab to the front. For a session in tmux, Claude Code's or Amp's, it selects the pane in tmux and brings forward the terminal showing that tmux session: in iTerm2, the exact tab; in other terminals, the app with its front window, which may not be the one holding the pane. Use Open to answer a permission dialog. Codex rows have no Open: Codex runs hooks in a shared background process, so Cue can't tell which tab a Codex session lives in.
 
 ## Notifications
 
-When a session finishes its turn, iTerm2 shows "‹project› finished: ‹first line of the reply›":
+Cue posts a notification for every agent, in every terminal:
 
-- **Claude Code**: Cue's hook asks Claude Code to post it.
-- **Amp**: Cue's plugin posts it through the Amp window's terminal.
-- **Codex**: Codex posts its own. Turn it on in `~/.codex/config.toml`:
+- **"Claude · api finished"** when a turn ends, with the reply's first line; **"… stopped"** when it ended on an error.
+- **"Codex · billing needs you"** when a session starts waiting on a permission prompt or a question.
 
-  ```toml
-  [tui]
-  notifications = true
-  ```
+Click one to open Cue on that session, with its reply expanded and the cursor in its prompt box. Each session keeps one notification, replaced by the next. Esc and interrupted turns stay quiet. While the popover is open, macOS shows no banner.
 
-No notifications? Allow them for iTerm2 in System Settings > Notifications. Inside tmux, Claude Code's banner doesn't arrive: tmux drops the OSC 9 sequence that carries it. The menubar count still shows the session waiting.
+The first time Cue starts, macOS asks whether it may send notifications: click Allow, or turn Cue on later in System Settings > Notifications. Change its sound or banner style there too.
+
+When Cue is quit, or its notifications are off, Claude Code and Amp fall back to the terminal banner: iTerm2 shows "‹project› finished: ‹first line›", with notifications allowed for iTerm2. Inside tmux that banner doesn't arrive. Codex's own notifications (`notifications` under `[tui]` in `~/.codex/config.toml`) would double Cue's, so leave them off.
 
 ## Row messages
 
@@ -124,7 +122,8 @@ Whenever a send fails after delivery started, Cue copies the prompt to the clipb
 | --- | --- | --- |
 | Automation: control iTerm2 | Your first Send to a Claude Code session in iTerm2, or first Open there | Cue types into tabs and reads their screen through AppleScript. tmux sessions need no permission |
 | Codex hook trust | The first `codex` start after install | Codex runs a hook only after you trust it in `/hooks` |
-| Notifications for iTerm2 | iTerm2's first notification | iTerm2 posts the "finished" banners |
+| Notifications for Cue | Cue's first start | Cue posts "finished" and "needs you" |
+| Login item | Cue's first start; macOS says "Background item added" | Cue opens at login. Turn it off in Cue's gear menu or in System Settings > General > Login Items |
 
 Cue is ad-hoc signed, so macOS treats each rebuild as a new app and asks for Automation again after `./install.sh`. The ⌃⌥Space shortcut needs no permission.
 
@@ -146,6 +145,10 @@ Cue is ad-hoc signed, so macOS treats each rebuild as a new app and asks for Aut
 
 **A Claude row says Read only.** Cue types only into iTerm2 tabs and tmux panes. Start Claude inside tmux in any other terminal; existing sessions pick up the pane on their next hook event.
 
+**No notifications from Cue.** Check System Settings > Notifications > Cue. Notifications post for changes Cue sees while it runs; a turn that ended while Cue was quit doesn't notify later.
+
+**Open on a tmux row only brings iTerm2 forward.** Selecting the exact tab needs Cue's Automation permission for iTerm2, which macOS asks for again after each `./install.sh`. Allow it, or turn Cue on under System Settings > Privacy & Security > Automation.
+
 **Look at the raw data.** Each session is a JSON file in `~/.cue/sessions/`. Hook errors go to `~/.cue/hook.log`.
 
 **Restore your settings.** Each install and uninstall saves `settings.json.cue-backup-YYYYMMDD-HHMMSS` next to `~/.claude/settings.json`, and `hooks.json.cue-backup-…` next to `~/.codex/hooks.json`, keeping the last three of each. Copy one back to undo.
@@ -153,7 +156,7 @@ Cue is ad-hoc signed, so macOS treats each rebuild as a new app and asks for Aut
 ## Limitations
 
 - Claude Code delivery works in iTerm2 tabs, and in tmux panes in any terminal. Other terminals without tmux are read only.
-- Inside tmux, Claude Code's finish notification doesn't reach the terminal.
+- Cue's notifications need Cue running. Quit, Claude Code and Amp fall back to the terminal banner, which doesn't arrive inside tmux.
 - A multi-line draft taller than Claude's input box may not fully clear before Cue types.
 - Cue reads Claude Code's screen layout, so a Claude Code UI change can make sends refuse until Cue updates. It refuses rather than types blind. See [Development](development.md#when-an-agent-updates).
 - Codex rows have no Open, and a prompt sent to a Codex session whose terminal you closed runs in the background.
