@@ -58,11 +58,12 @@ function tmuxPane(): { socket: string | null; pane: string | null } {
 }
 
 /** True while the Cue app posts notifications itself; it keeps its process id in notifier.pid. */
-function cueNotifies(): boolean {
+export function cueNotifies(): boolean {
 	try {
 		const pid = Number(fs.readFileSync(path.join(root, 'notifier.pid'), 'utf8').trim())
 		if (!Number.isInteger(pid) || pid <= 0) return false
-		return execFileSync('/bin/ps', ['-o', 'comm=', '-p', String(pid)], { encoding: 'utf8' }).trim().endsWith('/cue')
+		// ucomm is the kernel's short name, the one the hook checks (comm would be the full path)
+		return execFileSync('/bin/ps', ['-o', 'ucomm=', '-p', String(pid)], { encoding: 'utf8' }).trim() === 'cue'
 	} catch {
 		return false
 	}

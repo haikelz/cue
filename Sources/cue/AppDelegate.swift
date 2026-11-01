@@ -53,6 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
         showCount()
         model.notifier.onOpen = { [weak self] id in self?.show(focusing: id) }
+        model.notifier.popoverShown = { [weak self] in self?.popover.isShown ?? false }
         model.notifier.start()
         LoginItem.apply()
         hotKey = HotKey(keyCode: UInt32(kVK_Space), modifiers: UInt32(controlKey | optionKey)) { [weak self] in self?.toggle() }

@@ -24,17 +24,37 @@ package enum Alert: Equatable, Sendable {
 }
 
 extension Session {
-    /// What changed since `before` that deserves a notification: a turn that ended (finished_at moved),
-    /// else a session that just started waiting on you. Esc and interrupts end a turn without
+    /// What changed since `before` that deserves a notification: a session that just started waiting on
+    /// you, else a turn that ended (finished_at moved). Waiting comes first: when a turn ends and the
+    /// next one stops at a prompt within one poll, you're needed. Esc and interrupts end a turn without
     /// finished_at, so they stay quiet.
     package func alert(since before: Session) -> Alert? {
+        if status == .needsYou, before.status != .needsYou { return .needsYou }
         if let finishedAt, finishedAt != before.finishedAt {
             let first = lastMessage?.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
             let failed = lastMessage == "Error" || lastMessage?.hasPrefix("API error") == true
             return failed ? .stopped(reason: first) : .finished(reply: first)
         }
-        if status == .needsYou, before.status != .needsYou { return .needsYou }
         return nil
+    }
+}
+
+/// Remembers how the last poll saw each session and reports what changed since. A session seen for the
+/// first time, at launch or when it reappears, only sets the baseline, so Cue never replays old turns.
+package struct AlertTracker {
+    private var last: [String: Session] = [:]
+
+    package init() {}
+
+    package mutating func changes(in sessions: [Session]) -> [(session: Session, alert: Alert)] {
+        var out: [(session: Session, alert: Alert)] = []
+        for s in sessions {
+            if let before = last[s.sessionId], let alert = s.alert(since: before) { out.append((s, alert)) }
+            last[s.sessionId] = s
+        }
+        let ids = Set(sessions.map(\.sessionId))
+        last = last.filter { ids.contains($0.key) }
+        return out
     }
 }
 

@@ -49,6 +49,20 @@ import Testing
         #expect(Alert.needsYou.title("Codex · billing") == "Codex · billing needs you")
     }
 
+    @Test func waitingOnYouBeatsAFinishedTurnInOnePoll() {
+        var next = ended("Done.")
+        next.status = .needsYou  // the queued turn stopped at a prompt before the next poll
+        #expect(next.alert(since: working) == .needsYou)
+    }
+
+    @Test func theTrackerStartsQuietAndForgetsGoneSessions() {
+        var tracker = AlertTracker()
+        #expect(tracker.changes(in: [ended("Old turn.")]).isEmpty)  // launch: baseline only
+        #expect(tracker.changes(in: [ended("New turn.", at: 200)]).map(\.alert) == [.finished(reply: "New turn.")])
+        #expect(tracker.changes(in: []).isEmpty)  // the session went away
+        #expect(tracker.changes(in: [ended("Back again.", at: 300)]).isEmpty)  // it came back: baseline again
+    }
+
     @Test func longRepliesAreCut() {
         #expect(ended(String(repeating: "x", count: 500)).alert(since: working)?.body.count == 300)
     }

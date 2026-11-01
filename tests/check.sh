@@ -71,8 +71,11 @@ $CUE_DIR/bin/cue &
 notifier=$!
 print $notifier > $CUE_DIR/notifier.pid
 check "Stop prints no banner while Cue notifies" "$(ev Stop '"last_assistant_message":"x"')" ""
+amp_notifies() { CUE_DIR=$CUE_DIR node --no-warnings -e "import('$PWD/plugins/amp/cue.ts').then((m) => console.log(m.cueNotifies()))"; }
+check "the Amp plugin leaves the banner to Cue too" "$(amp_notifies)" true
 kill $notifier; wait $notifier 2>/dev/null
 check "a notifier.pid left by a crash brings the banner back" "$(ev Stop '"last_assistant_message":"x"' | jq -r '.terminalSequence | length > 0')" true
+check "and the Amp plugin's banner too" "$(amp_notifies)" false
 rm $CUE_DIR/notifier.pid
 
 ev Notification '"notification_type":"idle_prompt"'

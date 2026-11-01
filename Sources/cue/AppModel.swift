@@ -50,10 +50,13 @@ final class AppModel {
         resort()
         // Every second: reread the session files, notify what changed, and settle prompts waiting for proof.
         Task { [weak self] in
+            var tick = 0
             while let self, !Task.isCancelled {
                 monitor.reload()
                 notifier.update(monitor.sessions, name: name)
                 settlePending()
+                tick += 1
+                if tick % 10 == 0 { await notifier.refresh() }  // follow System Settings > Notifications
                 try? await Task.sleep(for: .seconds(1))
             }
         }
