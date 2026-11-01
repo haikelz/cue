@@ -74,23 +74,32 @@ struct RowView: View {
     }
 }
 
-/// The agent as an SF Symbol in a tinted circle; the row title names it, so VoiceOver skips this.
+/// The agent's own logo: Claude's starburst, the Codex cloud, Amp's tile. The row title names the
+/// agent, so VoiceOver skips this. A build run from .build/ has no bundle, so it draws a symbol instead.
 struct AgentIcon: View {
     let agent: Agent
 
     var body: some View {
-        let (symbol, color): (String, Color) = switch agent {
-        case .claude: ("sparkle", .orange)
-        case .codex: ("curlybraces", .teal)
-        case .amp: ("bolt.fill", .purple)
+        Group {
+            if let logo = Self.logos[agent] ?? nil {
+                Image(nsImage: logo).resizable().interpolation(.high).scaledToFit()
+                    .clipShape(RoundedRectangle(cornerRadius: agent == .amp ? 5 : 0))
+            } else {
+                Image(systemName: "terminal.fill")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 20, height: 20)
+                    .background(.gray.gradient, in: Circle())
+            }
         }
-        Image(systemName: symbol)
-            .font(.system(size: 10, weight: .bold))
-            .foregroundStyle(.white)
-            .frame(width: 20, height: 20)
-            .background(color.gradient, in: Circle())
-            .accessibilityHidden(true)
+        .frame(width: 20, height: 20)
+        .accessibilityHidden(true)
     }
+
+    /// Loaded once: assets/agent-‹name›.png in the app's Resources.
+    private static let logos: [Agent: NSImage?] = Dictionary(uniqueKeysWithValues: [Agent.claude, .codex, .amp].map { agent in
+        (agent, Bundle.main.url(forResource: "agent-\(agent.rawValue)", withExtension: "png").flatMap(NSImage.init(contentsOf:)))
+    })
 }
 
 /// A row's note, marked by kind: a spinner while sending, a check once the agent took the prompt,
