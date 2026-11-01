@@ -75,9 +75,9 @@ Cue posts a notification for every agent, in every terminal:
 - **"Claude · api finished"** when a turn ends, with the reply's first line; **"… stopped"** when it ended on an error.
 - **"Codex · billing needs you"** when a session starts waiting on a permission prompt or a question.
 
-Click one to open Cue on that session, with its reply expanded and the cursor in its prompt box. Each session keeps one notification, replaced by the next. Esc and interrupted turns stay quiet. While the popover is open, macOS shows no banner.
+Click one to open Cue on that session, scrolled to it with its reply expanded, and the cursor in its prompt box when it takes prompts. Each session keeps one notification, replaced by the next. Esc and interrupted turns stay quiet. While the popover is open, macOS shows no banner.
 
-The first time Cue starts, macOS asks whether it may send notifications: click Allow, or turn Cue on later in System Settings > Notifications. Change its sound or banner style there too.
+The first time Cue starts, macOS asks whether it may send notifications: click Allow, or turn Cue on later in System Settings > Notifications. Change its sound or banner style there too; with the alert style set to None, Cue counts its notifications as off.
 
 When Cue is quit, or its notifications are off, Claude Code and Amp fall back to the terminal banner: iTerm2 shows "‹project› finished: ‹first line›", with notifications allowed for iTerm2. Inside tmux that banner doesn't arrive. Codex's own notifications (`notifications` under `[tui]` in `~/.codex/config.toml`) would double Cue's, so leave them off.
 

@@ -22,6 +22,7 @@ One binary does all of it. `main.swift` picks the mode before AppKit loads, whic
 | `cue hook claude` | Handle one Claude Code hook event from stdin |
 | `cue hook codex` | Handle one Codex hook event from stdin; always prints JSON |
 | `cue send <session-id> <text>` | The app's send path from the command line |
+| `cue login-item on\|off` | Adds Cue to your login items or takes it out; `uninstall.sh` runs `off` |
 | `cue open <session-id>` | The app's Open path from the command line: `opened`, the apps to bring forward, or why not |
 | `cue codex-health [cue path]` | The footer's Codex hook check: `ok`, the warning, or `no answer` |
 
@@ -66,7 +67,7 @@ Codex keys hook trust by list position and a hash, so another tool that reorders
 | `Notification` (`idle_prompt`, Claude) | `idle`, from `working` | A second idle signal |
 | `SessionEnd` | File deleted | Row disappears |
 
-Claude events that carry `agent_id` come from subagents and change nothing. Codex subagents report under the parent's session id without `agent_id`, so once a Codex row is idle, events from a turn other than the last `UserPromptSubmit` are ignored.
+Claude events that carry `agent_id` come from subagents and change nothing. Codex subagents report under the parent's session id without `agent_id`, so once a Codex row is idle, events from a turn other than the last `UserPromptSubmit` are ignored, and a `Stop` or `StopFailure` from another turn is ignored at any time: it would end the parent's turn early and post a "finished" for it.
 
 ```mermaid
 stateDiagram-v2
@@ -185,11 +186,11 @@ The plugin checks each inbox file before trusting it: a name of the form `<uuid>
 
 ## Notifications
 
-The app posts notifications itself, for every agent and terminal. Each second, after it rereads the session files, `Notifier` compares each session with the last poll: a `finished_at` that moved posts "‹agent · project› finished" with the reply's first line ("stopped" for an API error), and a move into `needs_you` posts "needs you". A session seen for the first time only sets the baseline, so starting Cue doesn't replay old turns. Each notification uses the session id as its identifier, so a newer one replaces the older, and a click opens the popover on that session.
+The app posts notifications itself, for every agent and terminal. Each second, after it rereads the session files, `Notifier` compares each session with the last poll: a `finished_at` that moved posts "‹agent · project› finished" with the reply's first line ("stopped" for an API error), and a move into `needs_you` posts "needs you", and wins when both land in one poll. A session seen for the first time only sets the baseline, so starting Cue doesn't replay old turns. Each notification uses the session id as its identifier, so a newer one replaces the older, and a click opens the popover on that session.
 
-The terminal banner (OSC 9) stays as the fallback. While macOS lets Cue notify, Cue keeps its process id in `~/.cue/notifier.pid`; the Claude hook and the Amp plugin skip their banner while that process runs and is Cue, so a file left by a crash brings the banner back. Cue rechecks its permission each time the popover opens and releases the file when you turn its notifications off or quit.
+The terminal banner (OSC 9) stays as the fallback. While macOS lets Cue notify, Cue keeps its process id in `~/.cue/notifier.pid`; the Claude hook and the Amp plugin skip their banner while that process runs and is Cue, so a file left by a crash brings the banner back. Cue rechecks its permission every 10 seconds and when the popover opens, and releases the file when you turn its notifications off, set their alert style to None, or quit. Banners show while Cue is the active app too, except while the popover is open.
 
-Cue registers itself as a login item through `SMAppService`, on by default. Each reinstall changes its ad-hoc signature, so Cue registers again at launch while the gear menu's Open at Login is on.
+Cue registers itself as a login item through `SMAppService` on its first launch. After that, the gear menu and System Settings decide, and the menu shows what macOS reports. Cue registers again at launch only when a reinstall left no registration and you never turned it off. `uninstall.sh` takes it out of your login items before deleting the app.
 
 ## The menubar app
 

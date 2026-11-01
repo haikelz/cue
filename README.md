@@ -53,4 +53,4 @@ Then:
 ./uninstall.sh
 ```
 
-The script removes Cue's hooks and plugin, keeps every other hook, and deletes the app. Session files stay in `~/.cue` until you delete them.
+The script removes Cue's hooks and plugin, keeps every other hook, takes Cue out of your login items, and deletes the app. Session files stay in `~/.cue` until you delete them.
