@@ -20,7 +20,7 @@ Rows keep their places while the popover stays open, so a row never moves under 
 
 The header shows a count such as "2 waiting · 1 working". Each session is a rounded tile that shows:
 
-- **Agent and project**: the agent's symbol, then for example `Codex · billing`. The project is the last folder of the session's working directory. Two sessions of one agent in one folder get a short id suffix.
+- **Agent and project**: the agent's logo (Claude's starburst, the Codex cloud, Amp's tile), then for example `Codex · billing`. The project is the last folder of the session's working directory. Two sessions of one agent in one folder get a short id suffix.
 - **Status**: a colored dot, or a spinner while the agent works, then the status and the time since it last changed, for example `Idle · 3m`.
 - **Last message**: the first two lines of the agent's final reply. Click it to read all of it, with line breaks, bold, code and links, and text you can select and copy. A long reply scrolls; **Show less** folds it again. One reply opens at a time.
 - **Prompt box**: a text area four lines tall; a longer prompt scrolls inside it. A Claude Code row that needs you, or one outside iTerm2 and tmux, shows a line saying so instead, with an **Open** button.

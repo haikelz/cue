@@ -7,7 +7,7 @@
 A macOS menubar app for people who run many coding agents at once. Cue lists your Claude Code, Codex and Amp sessions with their status and last reply, and you send any of them its next prompt without hunting for its terminal window. It notifies you when a session finishes or needs you, and ⌃⌥Space opens it from any app.
 
 <p align="center">
-  <img src="docs/images/popover.png" width="380" alt="Cue's popover with three sessions: a Claude Code session that needs you in the terminal, an idle Claude Code session with a prompt drafted in its text area, and a working Codex session that queues prompts">
+  <img src="docs/images/popover.png" width="380" alt="Cue's popover with three sessions, each marked with its agent's logo: an idle Claude Code session with a prompt drafted in its text area, an idle Amp thread, and a working Codex session that queues prompts">
 </p>
 
 | | Claude Code | Codex | Amp |
@@ -54,3 +54,5 @@ Then:
 ```
 
 The script removes Cue's hooks and plugin, keeps every other hook, takes Cue out of your login items, and deletes the app. Session files stay in `~/.cue` until you delete them.
+
+The Claude, Codex and Amp logos are trademarks of Anthropic, OpenAI and Amp. Cue shows them only to mark which agent a session belongs to.
