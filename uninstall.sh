@@ -36,6 +36,8 @@ drop "$CLAUDE" "$BIN"
 drop "$CODEX" "'$(printf %s "$BIN" | sed "s/'/'\\\\''/g")' hook codex"
 rm -f "$HOME/.config/amp/plugins/cue.ts"
 pkill -xf "$BIN" 2>/dev/null || true
+[ -x "$BIN" ] && "$BIN" login-item off  # macOS keeps a login item for a deleted app otherwise
+defaults delete local.cue 2>/dev/null || true  # Cue's preferences, such as Open at Login
 rm -rf "$APP"
 echo "Removed Cue. Codex may ask you to re-review hooks that were listed after Cue's in /hooks."
 echo "Session files stay in ~/.cue until you delete them."

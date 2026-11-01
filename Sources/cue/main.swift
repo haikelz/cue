@@ -23,6 +23,16 @@ case "open":
         FileHandle.standardError.write(Data("\(error.message)\n".utf8))
         exit(1)
     }
+case "login-item":
+    // For uninstall.sh: takes Cue out of your login items before the app goes. `on` puts it back.
+    switch CommandLine.arguments.dropFirst(2).first {
+    case "off": LoginItem.unregister()
+    case "on": LoginItem.register()
+    default:
+        FileHandle.standardError.write(Data("usage: cue login-item on|off\n".utf8))
+        exit(1)
+    }
+    exit(0)
 case "codex-health":
     // The footer's Codex check from the command line: "ok", the warning, or "no answer".
     let exe = CommandLine.arguments.dropFirst(2).first ?? Bundle.main.executablePath ?? ""
@@ -30,7 +40,7 @@ case "codex-health":
     exit(0)
 case let word? where !word.hasPrefix("-"):
     // An unknown word must not start a second copy of the app. (`open` and AppKit defaults pass flags.)
-    FileHandle.standardError.write(Data("usage: cue [hook claude|codex | send <session-id> <text> | open <session-id> | codex-health [cue path]]\n".utf8))
+    FileHandle.standardError.write(Data("usage: cue [hook claude|codex | send <session-id> <text> | open <session-id> | login-item on|off | codex-health [cue path]]\n".utf8))
     exit(64)
 default:
     signal(SIGPIPE, SIG_IGN)

@@ -53,6 +53,7 @@ struct PopoverView: View {
         // Each open puts the cursor in the first row you can type in: after sorting, the longest wait.
         .onReceive(NotificationCenter.default.publisher(for: NSPopover.didShowNotification)) { _ in
             shown = true
+            openAtLogin = LoginItem.isOn  // you may have changed it in System Settings
             if !openRequested() { focused = model.rows.first(where: model.canType)?.sessionId }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSPopover.didCloseNotification)) { _ in shown = false }
@@ -61,7 +62,7 @@ struct PopoverView: View {
 
     @State private var shown = false
     @State private var scrollTarget: String?
-    @State private var openAtLogin = LoginItem.wanted
+    @State private var openAtLogin = LoginItem.isOn
 
     /// Opens the reply of the session a notification named and puts the cursor in its prompt box.
     private func openRequested() -> Bool {
@@ -102,8 +103,8 @@ struct PopoverView: View {
             Spacer()
             Text("⌃⌥Space opens Cue")
             Menu {
-                Toggle("Open at Login", isOn: Binding(get: { openAtLogin }, set: { LoginItem.wanted = $0; openAtLogin = $0 }))
-                if openAtLogin && LoginItem.needsApproval {
+                Toggle("Open at Login", isOn: Binding(get: { openAtLogin }, set: { LoginItem.set($0); openAtLogin = LoginItem.isOn }))
+                if LoginItem.wanted && LoginItem.needsApproval {
                     Button("Allow Cue in Login Items…") { SMAppService.openSystemSettingsLoginItems() }
                 }
                 Divider()
