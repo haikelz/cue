@@ -34,6 +34,9 @@ package enum Hook {
             let turn = input["turn_id"] as? String
             // Codex subagents report under the parent's session id. Once idle, events from another turn are theirs.
             let foreignTurn = agent == .codex && s.status == .idle && turn != nil && turn != s.turnId
+            // A turn ends only for the turn it is: a subagent's Stop would end the parent's turn early,
+            // overwrite its reply, and post a "finished" for it.
+            let otherTurnEnds = agent == .codex && turn != nil && s.turnId != nil && turn != s.turnId
             switch event {
             case "SessionStart":
                 // Compaction can run mid-turn; any other start (startup, resume, clear, fork) waits for input.
@@ -50,10 +53,12 @@ package enum Hook {
                 if foreignTurn { return nil }
                 s.status = .needsYou
             case "Stop":
+                if otherTurnEnds { return nil }
                 s.status = .idle
                 s.lastMessage = (input["last_assistant_message"] as? String).map { String($0.prefix(4000)) }
                 s.finishedAt = now
             case "StopFailure":
+                if otherTurnEnds { return nil }
                 s.status = .idle
                 s.lastMessage = "API error: \(input["error"] as? String ?? "unknown")"
                 s.finishedAt = now

@@ -154,6 +154,12 @@ cx Interrupt '"turn_id":"turn-1"' > /dev/null
 check "a late Interrupt from an earlier turn is ignored" "$(field status $X)" working
 cx Interrupt '"turn_id":"turn-2"' > /dev/null
 check "Codex Interrupt -> idle" "$(field status $X)" idle
+cx UserPromptSubmit '"turn_id":"turn-4","prompt":"with a subagent"' > /dev/null
+finished=$(field finished_at $X)
+cx Stop '"turn_id":"turn-sub","last_assistant_message":"subagent reply"' > /dev/null
+check "a subagent's Stop doesn't end the parent's turn" "$(field status $X)/$(field finished_at $X)/$(field last_message $X)" "working/$finished/Done here."
+cx Stop '"turn_id":"turn-4","last_assistant_message":"Parent done."' > /dev/null
+check "the parent's own Stop ends it" "$(field status $X)/$(field last_message $X)" "idle/Parent done."
 E=01a18a05-0000-7000-8000-00000000e8ec; ex=$CUE_DIR/exec.jsonl
 print '{"type":"session_meta","payload":{"originator":"codex_exec"}}' > $ex
 cx SessionStart '"source":"startup"' $E $ex > /dev/null
