@@ -26,7 +26,13 @@ struct PopoverView: View {
                 rowList
             } else {
                 // ponytail: fixed height past 3 rows; a measured height would need a GeometryReader dance.
-                ScrollView { rowList }.frame(height: 600)
+                ScrollViewReader { list in
+                    ScrollView { rowList }
+                        .frame(height: 600)
+                        .onChange(of: scrollTarget) { _, id in
+                            if let id { list.scrollTo(id, anchor: .top) }
+                        }
+                }
             }
             if let warning = model.monitor.codexWarning {
                 Label {
@@ -54,6 +60,7 @@ struct PopoverView: View {
     }
 
     @State private var shown = false
+    @State private var scrollTarget: String?
     @State private var openAtLogin = LoginItem.wanted
 
     /// Opens the reply of the session a notification named and puts the cursor in its prompt box.
@@ -61,6 +68,7 @@ struct PopoverView: View {
         guard let id = model.focusRequest else { return false }
         model.focusRequest = nil
         expanded = id
+        scrollTarget = id
         focused = model.rows.first { $0.sessionId == id && model.canType($0) }?.sessionId
         return true
     }
@@ -81,6 +89,7 @@ struct PopoverView: View {
             ForEach(model.rows, id: \.sessionId) { s in
                 RowView(session: s, focus: $focused,
                         expanded: Binding(get: { expanded == s.sessionId }, set: { expanded = $0 ? s.sessionId : nil }))
+                    .id(s.sessionId)
             }
         }
         .padding(8)
