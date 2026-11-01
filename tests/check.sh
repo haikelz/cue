@@ -60,6 +60,7 @@ ev ElicitationResult; check "ElicitationResult -> working" "$(field status)" wor
 long=$(printf 'x%.0s' {1..4100})
 out=$(ev Stop "\"last_assistant_message\":\"All tests pass.\\nSecond line $long\"")
 check "Stop -> idle" "$(field status)" idle
+check "Stop stamps finished_at" "$(( EPOCHREALTIME - $(field finished_at) < 5 ))" 1
 check "last message cut to 4,000" "$(field last_message | wc -m | tr -d ' ')" 4001  # 4,000 + wc's newline
 check "Stop returns an OSC 9 notification" "$(print -r -- $out | jq -r .terminalSequence | cut -c2-)" "]9;demo-project finished: All tests pass."$'\a'
 
@@ -78,6 +79,9 @@ ev UserPromptSubmit '"prompt":"go"'
 out=$(ev StopFailure '"error":"rate_limit"')
 check "StopFailure -> idle" "$(field status)" idle
 check "StopFailure stores the error" "$(field last_message)" "API error: rate_limit"
+finished=$(field finished_at)
+ev Interrupt > /dev/null; ev Notification '"notification_type":"idle_prompt"' > /dev/null
+check "a turn ending without Stop leaves finished_at alone" "$(field finished_at)" "$finished"
 check "StopFailure notifies" "$(print -r -- $out | jq -r .terminalSequence | cut -c2-)" "]9;demo-project stopped: API error: rate_limit"$'\a'
 
 ev UserPromptSubmit '"prompt":"go"'

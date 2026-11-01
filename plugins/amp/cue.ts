@@ -171,6 +171,7 @@ export default function (amp: PluginAPI) {
 			.trim()
 		const done = event.status === 'done'
 		attached.session.last_message = done ? Array.from(text).slice(0, 4000).join('') : event.status === 'error' ? 'Error' : 'Cancelled'
+		if (event.status !== 'cancelled') attached.session.finished_at = now() // Cue notifies on this
 		writeFile(sessionFile(attached.id), JSON.stringify(attached.session))
 		if (event.status !== 'cancelled') {
 			const project = path.basename(String(attached.session.cwd))

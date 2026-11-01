@@ -52,6 +52,7 @@ await handlers['agent.end']({
   messages: [{ role: 'user', content: [] }, { role: 'assistant', content: [{ type: 'thinking', thinking: '' }, { type: 'text', text: 'All done.\nMore.' }] }],
 })
 check('agent.end stores the reply', row(A)?.last_message, 'All done.\nMore.')
+check('agent.end stamps finished_at', Date.now() / 1000 - (row(A)?.finished_at ?? 0) < 5, true)
 check('idle state -> idle', row(A)?.status, 'idle')
 
 const sent = await new Promise((resolve) =>

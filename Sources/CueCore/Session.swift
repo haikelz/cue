@@ -69,6 +69,7 @@ package struct Session: Codable, Equatable, Sendable {
     package var status: Status
     package var lastMessage: String?
     package var lastPromptAt: Double?
+    package var finishedAt: Double?  // a turn ended (Stop, StopFailure, Amp's agent.end); not set by Esc or interrupts
     package var updatedAt: Double
     package var pid: Int32?
     package var pidStart: Double?

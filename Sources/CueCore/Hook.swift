@@ -52,9 +52,11 @@ package enum Hook {
             case "Stop":
                 s.status = .idle
                 s.lastMessage = (input["last_assistant_message"] as? String).map { String($0.prefix(4000)) }
+                s.finishedAt = now
             case "StopFailure":
                 s.status = .idle
                 s.lastMessage = "API error: \(input["error"] as? String ?? "unknown")"
+                s.finishedAt = now
             case "Interrupt":
                 if let turn, let current = s.turnId, turn != current { return nil }  // a late Esc for an earlier turn
                 s.status = .idle
