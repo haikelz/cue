@@ -1,5 +1,6 @@
 import AppKit
 import CueCore
+import ServiceManagement
 import SwiftUI
 
 /// The popover: a header, one tile per session, and a footer.
@@ -53,6 +54,7 @@ struct PopoverView: View {
     }
 
     @State private var shown = false
+    @State private var openAtLogin = LoginItem.wanted
 
     /// Opens the reply of the session a notification named and puts the cursor in its prompt box.
     private func openRequested() -> Bool {
@@ -90,9 +92,20 @@ struct PopoverView: View {
                   systemImage: model.monitor.hooksInstalled ? "checkmark.circle" : "exclamationmark.triangle")
             Spacer()
             Text("⌃⌥Space opens Cue")
-            Button("Quit") { NSApp.terminate(nil) }
-                .buttonStyle(.borderless)
-                .keyboardShortcut("q")
+            Menu {
+                Toggle("Open at Login", isOn: Binding(get: { openAtLogin }, set: { LoginItem.wanted = $0; openAtLogin = $0 }))
+                if openAtLogin && LoginItem.needsApproval {
+                    Button("Allow Cue in Login Items…") { SMAppService.openSystemSettingsLoginItems() }
+                }
+                Divider()
+                Button("Quit Cue") { NSApp.terminate(nil) }.keyboardShortcut("q")
+            } label: {
+                Image(systemName: "gearshape")
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Settings")
         }
         .font(.caption)
         .foregroundStyle(.secondary)
