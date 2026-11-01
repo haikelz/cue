@@ -80,6 +80,8 @@ tests/check.sh    # those, then the built binary's behavior
 
 It touches nothing outside the temp folder.
 
+**CI.** `.github/workflows/test.yml` runs on GitHub Actions for every push to `master` and every pull request, on a macOS runner with Node 24: `swift test`, then `swift build -c release`, then `tests/check.sh`. CI sets `HOOK_BUDGET_MS=200`, since shared runners run hooks slower than the 50 ms the script allows by default. `tests/e2e.sh` stays local: it drives real Claude Code, Codex and Amp sessions, which need your accounts and iTerm2.
+
 ```sh
 tests/e2e.sh
 ```

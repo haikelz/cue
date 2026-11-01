@@ -4,6 +4,10 @@
 
 <h1 align="center">Cue</h1>
 
+<p align="center">
+  <a href="https://github.com/haikelz/cue/actions/workflows/test.yml"><img src="https://github.com/haikelz/cue/actions/workflows/test.yml/badge.svg" alt="Tests"></a>
+</p>
+
 A macOS menubar app for people who run many coding agents at once. Cue lists your Claude Code, Codex and Amp sessions with their status and last reply, and you send any of them its next prompt without hunting for its terminal window. It notifies you when a session finishes or needs you, and ⌃⌥Space opens it from any app.
 
 <p align="center">
