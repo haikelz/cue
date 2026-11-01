@@ -50,6 +50,17 @@ function notify(tty: string | null, text: string) {
 	} catch {}
 }
 
+/** True while the Cue app posts notifications itself; it keeps its process id in notifier.pid. */
+function cueNotifies(): boolean {
+	try {
+		const pid = Number(fs.readFileSync(path.join(root, 'notifier.pid'), 'utf8').trim())
+		if (!Number.isInteger(pid) || pid <= 0) return false
+		return execFileSync('/bin/ps', ['-o', 'comm=', '-p', String(pid)], { encoding: 'utf8' }).trim().endsWith('/cue')
+	} catch {
+		return false
+	}
+}
+
 /**
  * Delivers each prompt Cue dropped in this thread's inbox, at most once. A rename claims a file, so
  * when two Amp windows show the thread, one wins. Cue reads the receipt, or the error, to report back.
@@ -173,7 +184,8 @@ export default function (amp: PluginAPI) {
 		attached.session.last_message = done ? Array.from(text).slice(0, 4000).join('') : event.status === 'error' ? 'Error' : 'Cancelled'
 		if (event.status !== 'cancelled') attached.session.finished_at = now() // Cue notifies on this
 		writeFile(sessionFile(attached.id), JSON.stringify(attached.session))
-		if (event.status !== 'cancelled') {
+		// The terminal banner is the fallback for when the Cue app isn't posting notifications itself.
+		if (event.status !== 'cancelled' && !cueNotifies()) {
 			const project = path.basename(String(attached.session.cwd))
 			notify(tty ?? null, `${project} ${done ? 'finished' : 'stopped'}: ${done ? text.split('\n')[0] : 'Error'}`)
 		}

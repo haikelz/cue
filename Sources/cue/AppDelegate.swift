@@ -52,6 +52,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         popover.delegate = self
 
         showCount()
+        model.notifier.onOpen = { [weak self] id in self?.show(focusing: id) }
+        model.notifier.start()
         hotKey = HotKey(keyCode: UInt32(kVK_Space), modifiers: UInt32(controlKey | optionKey)) { [weak self] in self?.toggle() }
     }
 
@@ -68,6 +70,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     @objc private func clicked() {
         // A click on the icon closes the transient popover first, then lands here: don't reopen it.
         if Date().timeIntervalSince(closedAt) > 0.3 { toggle() }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        model.notifier.stop()  // the hooks' terminal banners take over again
+    }
+
+    /// Opens the popover on one session, for a notification you clicked.
+    func show(focusing id: String) {
+        model.focusRequest = id
+        if !popover.isShown { toggle() }
     }
 
     func popoverDidClose(_ notification: Notification) {

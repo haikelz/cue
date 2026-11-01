@@ -64,6 +64,17 @@ check "Stop stamps finished_at" "$(( EPOCHREALTIME - $(field finished_at) < 5 ))
 check "last message cut to 4,000" "$(field last_message | wc -m | tr -d ' ')" 4001  # 4,000 + wc's newline
 check "Stop returns an OSC 9 notification" "$(print -r -- $out | jq -r .terminalSequence | cut -c2-)" "]9;demo-project finished: All tests pass."$'\a'
 
+# While the Cue app notifies (its pid in notifier.pid), Stop leaves the terminal banner out.
+# A stand-in process named cue: the kernel names a symlink after its target, and a copied /bin/sleep won't run.
+mkdir -p $CUE_DIR/bin && print '#include <unistd.h>\nint main(void) { pause(); }' | cc -x c - -o $CUE_DIR/bin/cue
+$CUE_DIR/bin/cue &
+notifier=$!
+print $notifier > $CUE_DIR/notifier.pid
+check "Stop prints no banner while Cue notifies" "$(ev Stop '"last_assistant_message":"x"')" ""
+kill $notifier; wait $notifier 2>/dev/null
+check "a notifier.pid left by a crash brings the banner back" "$(ev Stop '"last_assistant_message":"x"' | jq -r '.terminalSequence | length > 0')" true
+rm $CUE_DIR/notifier.pid
+
 ev Notification '"notification_type":"idle_prompt"'
 check "idle_prompt while idle changes nothing" "$(field status)" idle
 ev UserPromptSubmit '"prompt":"go"'

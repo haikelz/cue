@@ -109,7 +109,8 @@ package enum Hook {
             return s
         }
 
-        guard agent == .claude, let s = wrote, event == "Stop" || event == "StopFailure" else { return nil }
+        // The terminal banner is the fallback for when the Cue app isn't posting notifications itself.
+        guard agent == .claude, let s = wrote, event == "Stop" || event == "StopFailure", !NotifierFile.isActive else { return nil }
         let detail = s.lastMessage?.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
         let verb = event == "Stop" ? "finished" : "stopped"
         return try notification("\(s.project) \(verb): \(detail)")

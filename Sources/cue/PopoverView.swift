@@ -45,8 +45,22 @@ struct PopoverView: View {
         .frame(width: 380)
         // Each open puts the cursor in the first row you can type in: after sorting, the longest wait.
         .onReceive(NotificationCenter.default.publisher(for: NSPopover.didShowNotification)) { _ in
-            focused = model.rows.first(where: model.canType)?.sessionId
+            shown = true
+            if !openRequested() { focused = model.rows.first(where: model.canType)?.sessionId }
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSPopover.didCloseNotification)) { _ in shown = false }
+        .onChange(of: model.focusRequest) { if shown { _ = openRequested() } }
+    }
+
+    @State private var shown = false
+
+    /// Opens the reply of the session a notification named and puts the cursor in its prompt box.
+    private func openRequested() -> Bool {
+        guard let id = model.focusRequest else { return false }
+        model.focusRequest = nil
+        expanded = id
+        focused = model.rows.first { $0.sessionId == id && model.canType($0) }?.sessionId
+        return true
     }
 
     private var header: some View {

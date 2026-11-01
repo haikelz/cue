@@ -21,8 +21,12 @@ struct Pending {
 @MainActor @Observable
 final class AppModel {
     let monitor: SessionMonitor
+    let notifier = Notifier()
     private(set) var rowStates: [String: RowState] = [:]
     private(set) var order: [String] = []
+    /// A session to open in the popover (its reply expanded, the cursor in its prompt box), set by a
+    /// notification click; the popover clears it once done.
+    var focusRequest: String?
     @ObservationIgnored private let worker = Worker("cue.worker")
 
     var sessions: [Session] { monitor.sessions }
@@ -44,10 +48,11 @@ final class AppModel {
     init() {
         monitor = SessionMonitor(worker: worker)
         resort()
-        // Every second: reread the session files and settle prompts waiting for proof.
+        // Every second: reread the session files, notify what changed, and settle prompts waiting for proof.
         Task { [weak self] in
             while let self, !Task.isCancelled {
                 monitor.reload()
+                notifier.update(monitor.sessions, name: name)
                 settlePending()
                 try? await Task.sleep(for: .seconds(1))
             }
@@ -65,6 +70,7 @@ final class AppModel {
             return $0.status == .idle ? $0.updatedAt < $1.updatedAt : $0.project < $1.project
         }.map(\.sessionId)
         monitor.refresh()
+        Task { await notifier.refresh() }
     }
 
     /// Whether you can type a prompt in this row right now.
