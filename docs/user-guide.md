@@ -10,6 +10,10 @@ The icon is Cue's mark: your agent sessions stacked like windows, with a dot for
 
 ## The popover
 
+<p align="center">
+  <img src="images/popover.png" width="380" alt="The popover with an idle Claude Code session holding a drafted prompt, an idle Amp thread, and a working Codex session">
+</p>
+
 The popover lists one row per session: Claude Code sessions, Codex sessions, and the thread open in each Amp window. Cue sorts the rows each time the popover opens:
 
 1. Needs you (a permission dialog or a question is open)
@@ -23,11 +27,19 @@ The header shows a count such as "2 waiting · 1 working". Each session is a rou
 - **Agent and project**: the agent's logo (Claude's starburst, the Codex cloud, Amp's tile), then for example `Codex · billing`. The project is the last folder of the session's working directory. Two sessions of one agent in one folder get a short id suffix.
 - **Status**: a colored dot, or a spinner while the agent works, then the status and the time since it last changed, for example `Idle · 3m`.
 - **Last message**: the first two lines of the agent's final reply. Click it to read all of it, with line breaks, bold, code and links, and text you can select and copy. A long reply scrolls; **Show less** folds it again. One reply opens at a time.
+
+  <img src="images/reply-expanded.png" width="380" alt="A Claude Code row with its reply expanded: bold text, code, a list, and a Show less link">
 - **Prompt box**: a text area four lines tall; a longer prompt scrolls inside it. A Claude Code row that needs you, or one outside iTerm2 and tmux, shows a line saying so instead, with an **Open** button.
 - **Send**, and the **Open** arrow for Claude Code and Amp rows.
 - **A note** under the prompt box when something needs your attention. See [Row messages](#row-messages).
 
-The footer shows whether Cue's hooks are installed, a reminder of ⌃⌥Space, and a gear menu with **Open at Login** and **Quit Cue** (⌘Q). Cue opens at login unless you turn that off there. Above the footer, an orange banner appears when Codex won't run Cue's hooks:
+The footer shows whether Cue's hooks are installed, a reminder of ⌃⌥Space, and a gear menu with **Open at Login** and **Quit Cue** (⌘Q). Cue opens at login unless you turn that off there.
+
+<p align="center">
+  <img src="images/gear-menu.png" width="440" alt="The footer's gear menu, open, with Open at Login and Quit Cue">
+</p>
+
+Above the footer, an orange banner appears when Codex won't run Cue's hooks:
 
 | Warning | What to do |
 | --- | --- |
@@ -35,6 +47,10 @@ The footer shows whether Cue's hooks are installed, a reminder of ⌃⌥Space, a
 | Cue's Codex hooks are missing: run ./install.sh | Run `./install.sh` |
 
 ### Statuses
+
+<p align="center">
+  <img src="images/states.png" width="380" alt="Three rows: a Claude Code session that needs you, with Open; one outside iTerm2 and tmux, read only; a working Codex session with a spinner; and the orange Codex hook warning above the footer">
+</p>
 
 | Status | Claude Code | Codex and Amp |
 | --- | --- | --- |
