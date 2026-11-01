@@ -70,12 +70,14 @@ package enum Codex {
         p.standardError = FileHandle.nullDevice
         do { try p.run() } catch { return nil }
         defer { if p.isRunning { p.terminate() } }
-        let requests = [
-            #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"name":"cue","version":"0.3.0"}}}"#,
-            #"{"jsonrpc":"2.0","method":"initialized"}"#,
-            #"{"jsonrpc":"2.0","id":2,"method":"hooks/list","params":{}}"#,
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
+        let requests: [[String: Any]] = [
+            ["jsonrpc": "2.0", "id": 1, "method": "initialize", "params": ["clientInfo": ["name": "cue", "version": version]]],
+            ["jsonrpc": "2.0", "method": "initialized"],
+            ["jsonrpc": "2.0", "id": 2, "method": "hooks/list", "params": [String: Any]()],
         ]
-        try? input.fileHandleForWriting.write(contentsOf: Data((requests.joined(separator: "\n") + "\n").utf8))
+        let lines = requests.compactMap { try? JSONSerialization.data(withJSONObject: $0) }.map { $0 + Data("\n".utf8) }
+        try? input.fileHandleForWriting.write(contentsOf: lines.reduce(Data(), +))
         // poll() with a deadline, not a blocking read: a wrapper script that doesn't pass SIGTERM on would
         // leave the real app-server holding stdout open, and a blocking read would wait forever.
         let fd = output.fileHandleForReading.fileDescriptor
