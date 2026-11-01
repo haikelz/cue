@@ -50,6 +50,13 @@ function notify(tty: string | null, text: string) {
 	} catch {}
 }
 
+/** The tmux socket and pane this Amp runs in, checked as the Claude hook checks them; nulls outside tmux. */
+function tmuxPane(): { socket: string | null; pane: string | null } {
+	const socket = process.env.TMUX?.split(',').slice(0, -2).join(',') ?? ''
+	const pane = process.env.TMUX_PANE ?? ''
+	return socket.startsWith('/') && /^%\d+$/.test(pane) ? { socket, pane } : { socket: null, pane: null }
+}
+
 /** True while the Cue app posts notifications itself; it keeps its process id in notifier.pid. */
 function cueNotifies(): boolean {
 	try {
@@ -113,6 +120,7 @@ export default function (amp: PluginAPI) {
 		if (tty === undefined) tty = ampTTY()
 		const file = sessionFile(id)
 		const tab = process.env.ITERM_SESSION_ID?.split(':').pop()
+		const tmux = tmuxPane() // Open selects this pane when Amp runs inside tmux
 		const session: Record<string, unknown> = {
 			session_id: id,
 			agent: 'amp',
@@ -122,6 +130,8 @@ export default function (amp: PluginAPI) {
 			updated_at: now(),
 			pid: process.ppid, // the owning Amp process; another window on this thread won't delete our file
 			iterm_session_id: process.env.TMUX ? null : tab || null,
+			tmux_socket: tmux.socket,
+			tmux_pane: tmux.pane,
 			heartbeat: now(),
 		}
 		const save = () => {

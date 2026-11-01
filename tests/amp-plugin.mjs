@@ -6,6 +6,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 const [, , plugin, cue, A, B] = process.argv
+// As if this Amp ran inside tmux: the plugin records the pane, so Cue's Open can select it.
+process.env.TMUX = '/private/tmp/tmux-501/default,4242,0'
+process.env.TMUX_PANE = '%4'
 const dir = process.env.CUE_DIR
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 const row = (id) => { try { return JSON.parse(fs.readFileSync(path.join(dir, 'sessions', `${id}.json`), 'utf8')) } catch { return null } }
@@ -51,6 +54,7 @@ await handlers['agent.end']({
   thread: { id: A }, status: 'done',
   messages: [{ role: 'user', content: [] }, { role: 'assistant', content: [{ type: 'thinking', thinking: '' }, { type: 'text', text: 'All done.\nMore.' }] }],
 })
+check('the plugin records its tmux pane', [row(A)?.tmux_socket, row(A)?.tmux_pane, row(A)?.iterm_session_id], ['/private/tmp/tmux-501/default', '%4', null])
 check('agent.end stores the reply', row(A)?.last_message, 'All done.\nMore.')
 check('agent.end stamps finished_at', Date.now() / 1000 - (row(A)?.finished_at ?? 0) < 5, true)
 check('idle state -> idle', row(A)?.status, 'idle')

@@ -39,14 +39,14 @@ struct ITermTab: Terminal {
     let id: String
 
     func screen(tty: String, timeout: Double) throws(DeliveryError) -> String {
-        let out = try osascript(Self.probeScript, [id], timeout: timeout)
+        let out = try Self.osascript(Self.probeScript, [id], timeout: timeout)
         let parts = out.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
         guard String(parts[0]) == tty else { throw .moved("Tab no longer runs this session") }
         return parts.count > 1 ? String(parts[1]) : ""
     }
 
     func send(_ chunks: [[UInt8]], tty: String) throws(DeliveryError) {
-        switch try osascript(Self.typeScript, [id, tty] + chunks.map { String(decoding: $0, as: UTF8.self) }) {
+        switch try Self.osascript(Self.typeScript, [id, tty] + chunks.map { String(decoding: $0, as: UTF8.self) }) {
         case "ok": return
         case "tty-changed": throw .moved("Tab no longer runs this session")
         case let other: throw .failed("iTerm2 replied: \(other)")
@@ -54,13 +54,19 @@ struct ITermTab: Terminal {
     }
 
     func open() throws(DeliveryError) -> [AppRef] {
-        _ = try osascript(Self.openScript, [id], timeout: 10)
+        _ = try Self.osascript(Self.openScript, [id], timeout: 10)
         return []  // the script brought iTerm2 forward
+    }
+
+    /// Selects the iTerm2 tab whose session runs on `tty` and brings iTerm2 forward: for a tmux client
+    /// in iTerm2, whose session id the hooks can't see. False when no tab runs on that tty.
+    static func select(tty: String) -> Bool {
+        (try? osascript(selectByTTYScript, [tty], timeout: 10)) == "ok"
     }
 
     /// Runs AppleScript with arguments in argv, so prompt text never becomes script source. The long
     /// default timeout leaves room for the first-run Automation consent dialog. "missing" means the tab is gone.
-    private func osascript(_ script: String, _ args: [String], timeout: Double = 60) throws(DeliveryError) -> String {
+    private static func osascript(_ script: String, _ args: [String], timeout: Double = 60) throws(DeliveryError) -> String {
         let out: String
         do {
             out = try Command.run("/usr/bin/osascript", ["-"] + args, input: script, timeout: timeout)
@@ -80,7 +86,7 @@ struct ITermTab: Terminal {
           repeat with w in windows
             repeat with t in tabs of w
               repeat with s in sessions of t
-                if id of s is sid then
+                if %match then
         %@
                 end if
               end repeat
@@ -90,8 +96,8 @@ struct ITermTab: Terminal {
         return "missing"
         """
 
-    private static func script(_ head: String, _ body: String) -> String {
-        "on run argv\n\(head)\n" + findSession.replacingOccurrences(of: "%@", with: body) + "\nend run"
+    private static func script(_ head: String, _ body: String, match: String = "id of s is sid") -> String {
+        "on run argv\n\(head)\n" + findSession.replacingOccurrences(of: "%match", with: match).replacingOccurrences(of: "%@", with: body) + "\nend run"
     }
 
     private static let probeScript = script("set sid to item 1 of argv", """
@@ -111,13 +117,17 @@ struct ITermTab: Terminal {
         return "ok"
         """)
 
-    private static let openScript = script("set sid to item 1 of argv", """
+    private static let openBody = """
         tell w to select
         tell t to select
         tell s to select
         activate
         return "ok"
-        """)
+        """
+
+    private static let openScript = script("set sid to item 1 of argv", openBody)
+
+    private static let selectByTTYScript = script("set wantTty to item 1 of argv", openBody, match: "tty of s is wantTty")
 }
 
 /// A tmux pane, driven through the tmux CLI, which needs no macOS permission. Keys go as raw bytes
@@ -143,18 +153,20 @@ struct TmuxPane: Terminal {
     /// one of them is the terminal app showing it.
     func open() throws(DeliveryError) -> [AppRef] {
         _ = try tmux(["select-window", "-t", pane, ";", "select-pane", "-t", pane])
-        let clients = (try? tmux(["list-clients", "-t", pane, "-F", "#{client_activity} #{client_pid}"])) ?? ""
-        let latest = clients.split(separator: "\n").compactMap { line -> (Int, pid_t)? in
+        let clients = (try? tmux(["list-clients", "-t", pane, "-F", "#{client_activity} #{client_pid} #{client_tty}"])) ?? ""
+        let latest = clients.split(separator: "\n").compactMap { line -> (at: Int, pid: pid_t, tty: String)? in
             let f = line.split(separator: " ")
-            guard f.count == 2, let at = Int(f[0]), let pid = pid_t(f[1]) else { return nil }
-            return (at, pid)
-        }.max { $0.0 < $1.0 }
-        guard var pid = latest?.1 else { throw .failed("No terminal shows this tmux session; run tmux attach") }
+            guard f.count == 3, let at = Int(f[0]), let pid = pid_t(f[1]) else { return nil }
+            return (at, pid, String(f[2]))
+        }.max { $0.at < $1.at }
+        guard let latest else { throw .failed("No terminal shows this tmux session; run tmux attach") }
+        var pid = latest.pid
         var apps: [AppRef] = []
         for _ in 0..<12 {
             guard let p = Proc(pid) else { break }
             // iTerm2 runs shells under its iTermServer helper, whose parent is launchd rather than iTerm2.
-            if p.name.hasPrefix("iTermServer") { return apps + [.bundle("com.googlecode.iterm2")] }
+            // Its AppleScript can find the tab by the client's tty; failing that, iTerm2 comes forward.
+            if p.name.hasPrefix("iTermServer") { return ITermTab.select(tty: latest.tty) ? [] : apps + [.bundle("com.googlecode.iterm2")] }
             apps.append(.pid(pid))
             pid = p.ppid
         }

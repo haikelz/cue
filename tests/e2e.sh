@@ -151,6 +151,15 @@ Second line: reply with the number of lines in this message and nothing else."
     tx send-keys -t $pane fg Enter; sleep 2
     check "no stray text in the pane" "$(tx capture-pane -p -t $pane | grep -c nope)" 0
 
+    # Open: a detached session has no terminal to show; with its client in an iTerm2 tab, Open selects that tab.
+    check "Open with no tmux client says so" "$($BIN open $P 2>&1)" "No terminal shows this tmux session; run tmux attach"
+    sidT=$($T new); sleep 1; $T type $sidT "tmux -S $W/tmux.sock attach -t cue-e2e" > /dev/null; $T key $sidT 13 > /dev/null; sleep 2
+    client=$(tx list-clients -F '#{client_tty}' | head -1)
+    sidF=$($T new); sleep 1  # another window in front
+    opened=$($BIN open $P 2>&1)
+    check "Open selects the iTerm2 tab of the tmux client" "$opened $(osascript -e 'tell application "iTerm2" to tty of current session of current window')" "opened $client"
+    $T close $sidF > /dev/null; $T close $sidT > /dev/null; sleep 1
+
     # The row may outlive its pane for a moment; put it back as if the app hadn't caught up yet.
     # A running Cue app may delete it again first, which is a refusal too.
     cp $SESSIONS/$P.json $W/tmux-row.json; tx kill-server; sleep 1; cp $W/tmux-row.json $SESSIONS/$P.json

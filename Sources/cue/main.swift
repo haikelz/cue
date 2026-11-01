@@ -8,6 +8,21 @@ case "hook":
 case "send":
     signal(SIGPIPE, SIG_IGN)  // osascript dying before it reads its script must not kill us
     exit(SendCommand.run(Array(CommandLine.arguments.dropFirst(2))))
+case "open":
+    // Open from the command line, for tests and scripts: prints "opened", or the apps the app would
+    // bring forward, or why it couldn't.
+    guard let id = CommandLine.arguments.dropFirst(2).first, let s = Store.read(id) else {
+        FileHandle.standardError.write(Data("usage: cue open <session-id>\n".utf8))
+        exit(1)
+    }
+    do {
+        let apps = try Delivery.open(s)
+        print(apps.isEmpty ? "opened" : "bring forward: \(apps)")
+        exit(0)
+    } catch {
+        FileHandle.standardError.write(Data("\(error.message)\n".utf8))
+        exit(1)
+    }
 case "codex-health":
     // The footer's Codex check from the command line: "ok", the warning, or "no answer".
     let exe = CommandLine.arguments.dropFirst(2).first ?? Bundle.main.executablePath ?? ""
@@ -15,7 +30,7 @@ case "codex-health":
     exit(0)
 case let word? where !word.hasPrefix("-"):
     // An unknown word must not start a second copy of the app. (`open` and AppKit defaults pass flags.)
-    FileHandle.standardError.write(Data("usage: cue [hook claude|codex | send <session-id> <text> | codex-health [cue path]]\n".utf8))
+    FileHandle.standardError.write(Data("usage: cue [hook claude|codex | send <session-id> <text> | open <session-id> | codex-health [cue path]]\n".utf8))
     exit(64)
 default:
     signal(SIGPIPE, SIG_IGN)
