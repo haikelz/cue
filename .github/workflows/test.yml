@@ -1,0 +1,35 @@
+name: Tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    # Cue is a macOS app: the unit tests and checks need macOS, Swift 6 and the Command Line Tools.
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # tests/check.sh runs the Amp plugin's TypeScript as is, which Node does from version 23.6.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Toolchain
+        run: swift --version && node --version
+
+      - name: Unit tests
+        run: swift test
+
+      - name: Build
+        run: swift build -c release
+
+      # Hooks, delivery, the Amp inbox and plugin, and the notification fallback, against the release build.
+      # The end-to-end run stays local: it drives real Claude Code, Codex and Amp sessions in iTerm2.
+      - name: Checks
+        run: tests/check.sh
+        env:
+          HOOK_BUDGET_MS: 200 # shared CI machines run hooks slower than a Mac at rest

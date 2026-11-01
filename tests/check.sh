@@ -128,7 +128,7 @@ start=$EPOCHREALTIME
 for i in {1..100}; do ev PostToolUse '"tool_name":"Read"' $P; done
 avg=$(( (EPOCHREALTIME - start) * 10 ))  # ms per run
 printf "      hook average: %.1f ms\n" $avg
-check "hook averages under 50 ms" "$(( avg < 50 ))" 1
+check "hook averages under ${HOOK_BUDGET_MS:-50} ms" "$(( avg < ${HOOK_BUDGET_MS:-50} ))" 1  # CI raises the budget
 
 print "      -- codex"
 X=01a18a05-536c-77d0-b9bb-3f3117bb510b
