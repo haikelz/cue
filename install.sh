@@ -87,7 +87,7 @@ if [ -d "$HOME/.codex" ]; then
     | reduce ("SessionStart", "UserPromptSubmit", "PermissionRequest", "PostToolUse", "Stop", "Interrupt", "SessionEnd") as $ev (.; add($ev))
   ' --arg cmd "$CODEX_CMD"
   echo "Codex: open codex, run /hooks, and trust Cue's hooks. Codex skips hooks you haven't trusted."
-  echo "Codex: for finish notifications, set notifications = true under [tui] in ~/.codex/config.toml."
+  echo "Codex: Cue posts its own notifications; leave notifications under [tui] in ~/.codex/config.toml off to avoid doubles."
 fi
 
 if command -v amp > /dev/null; then
