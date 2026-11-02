@@ -1,8 +1,25 @@
 #!/bin/sh
 # Build Cue, install it to ~/Applications, and wire it into Claude Code, Codex and Amp.
 # Safe to run twice: hooks already present are left alone. Migrates a Claude Relay install.
+# In a release download, which holds a built Cue.app and no sources, it installs that app instead.
 set -eu
 cd "$(dirname "$0")"
+
+# bundle <path.app>: build Cue and assemble its app bundle there.
+bundle() {
+  swift build -c release
+  mkdir -p "$1/Contents/MacOS" "$1/Contents/Resources"
+  cp .build/release/cue "$1/Contents/MacOS/cue"
+  cp Info.plist "$1/Contents/Info.plist"
+  cp assets/AppIcon.icns assets/menubar.tiff assets/agent-*.png "$1/Contents/Resources/"
+  codesign --force --sign - "$1"
+}
+
+# ./install.sh --bundle <path.app> only builds the bundle, for the release workflow to zip.
+if [ "${1:-}" = --bundle ]; then bundle "${2:?--bundle takes the path of the app to build}"; exit; fi
+
+# macOS 15 ships jq; macOS 14 doesn't, and without it the settings below can't be written.
+command -v jq > /dev/null || { echo "Cue's install needs jq: brew install jq" >&2; exit 1; }
 
 APP="$HOME/Applications/Cue.app"
 BIN="$APP/Contents/MacOS/cue"
@@ -34,14 +51,17 @@ rewrite() {
   fi
 }
 
-swift build -c release
 # Build the bundle beside the old one and swap them, so hooks never find the binary missing.
 rm -rf "$APP.new" "$APP.old"
-mkdir -p "$APP.new/Contents/MacOS" "$APP.new/Contents/Resources"
-cp .build/release/cue "$APP.new/Contents/MacOS/cue"
-cp Info.plist "$APP.new/Contents/Info.plist"
-cp assets/AppIcon.icns assets/menubar.tiff assets/agent-*.png "$APP.new/Contents/Resources/"
-codesign --force --sign - "$APP.new"
+if [ -f Package.swift ]; then
+  bundle "$APP.new"
+else
+  # hw.optional.arm64, not uname -m, which says x86_64 in a Rosetta shell on Apple silicon.
+  [ "$(sysctl -n hw.optional.arm64 2>/dev/null)" = 1 ] || { echo "This Cue.app is built for Apple silicon. On this Mac, build Cue from its sources." >&2; exit 1; }
+  cp -R Cue.app "$APP.new"
+  # A downloaded app carries the quarantine flag, and Gatekeeper would stop the unsigned app and its hooks.
+  xattr -dr com.apple.quarantine "$APP.new"
+fi
 pkill -xf "$BIN" 2>/dev/null || true  # the app only; hook runs carry arguments
 if [ -d "$APP" ]; then mv "$APP" "$APP.old"; fi
 mv "$APP.new" "$APP"
