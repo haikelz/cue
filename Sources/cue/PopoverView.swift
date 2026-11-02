@@ -30,7 +30,9 @@ struct PopoverView: View {
                     }
                     .frame(height: min(listHeight, maxListHeight))
                     .onChange(of: scrollTarget) { _, id in
-                        if let id { list.scrollTo(id, anchor: .top) }
+                        guard let id else { return }
+                        list.scrollTo(id, anchor: .top)
+                        scrollTarget = nil  // so a second notification for the same session scrolls again
                     }
                 }
             }
