@@ -22,16 +22,16 @@ struct PopoverView: View {
                          : "No agent is wired to Cue yet. Run ./install.sh in the cue folder.")
                 }
                 .padding(.vertical, 12)
-            } else if model.rows.count <= 3 {
-                rowList
             } else {
-                // ponytail: fixed height past 3 rows; a measured height would need a GeometryReader dance.
+                // The list grows with its rows, and with an opened reply, up to the screen's room, then scrolls.
                 ScrollViewReader { list in
-                    ScrollView { rowList }
-                        .frame(height: 600)
-                        .onChange(of: scrollTarget) { _, id in
-                            if let id { list.scrollTo(id, anchor: .top) }
-                        }
+                    ScrollView {
+                        rowList.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { listHeight = $0 }
+                    }
+                    .frame(height: min(listHeight, maxListHeight))
+                    .onChange(of: scrollTarget) { _, id in
+                        if let id { list.scrollTo(id, anchor: .top) }
+                    }
                 }
             }
             if let warning = model.monitor.codexWarning {
@@ -62,6 +62,11 @@ struct PopoverView: View {
 
     @State private var shown = false
     @State private var scrollTarget: String?
+    @State private var listHeight: CGFloat = 0
+
+    /// The shortest screen's height less the menu bar, the header, the footer and a warning: the popover may
+    /// open on any of them, and NSScreen.main follows the key window, which isn't the popover yet.
+    private var maxListHeight: CGFloat { (NSScreen.screens.map(\.visibleFrame.height).min() ?? 800) - 180 }
     @State private var openAtLogin = LoginItem.isOn
     @AppStorage(Notifier.soundsKey) private var playSounds = true
 
