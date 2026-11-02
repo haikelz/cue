@@ -117,7 +117,7 @@ Cue depends on behavior the agents don't promise. After an upgrade, run `tests/e
 
 | Agent | Assumption | Where | How to check |
 | --- | --- | --- | --- |
-| Claude Code | The input box is a `❯` line in column 0 between two `─` rule lines | `Delivery.box` | `tests/iterm.sh screen <iterm-id>`, or `tmux capture-pane -p -t <pane>` |
+| Claude Code | The input box is a `❯` line in column 0 between two `─` rule lines | `Delivery.box` | Save a screen with `tests/iterm.sh screen <iterm-id>` or `tmux capture-pane -p -t <pane>` (or take `~/.cue/unreadable-screen.txt`, kept when a send found no box), then `CUE_SCREEN_FILE=<file> swift test --filter LiveScreen` |
 | Claude Code | The working spinner reads `✻ Word… (` right above the box | `Delivery.isSpinner` | Capture a tab while Claude works |
 | Claude Code | Input that arrives in a burst becomes `<pasted_content>` | `Delivery.keys`, and the 150 ms gap in each `Terminal.send` | Send a long line, grep the transcript for `pasted_content` |
 | Claude Code | ESC + CR inserts a line break; Ctrl+U clears to line start | `Key`, send step 4 | Send a 3-line prompt over a draft |

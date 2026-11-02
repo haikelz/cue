@@ -63,7 +63,7 @@ Claude Code drafts follow the iTerm2 tab or tmux pane, so a draft survives `/cle
 
 ## Sending a prompt
 
-Type in the prompt box. **Return** adds a line break; **⌘Return** or the **Send** button sends. The row you're typing in shows the accent focus ring and a "⌘↩ to send" hint, since its Send button is the one ⌘Return triggers. Each agent takes the prompt its own way.
+Type in the prompt box. It takes text exactly as typed: no smart quotes or dashes, text replacement or autocorrect, so code and flags arrive intact. **Return** adds a line break; **⌘Return** or the **Send** button sends. The row you're typing in shows the accent focus ring and a "⌘↩ to send" hint, since its Send button is the one ⌘Return triggers. Each agent takes the prompt its own way.
 
 **Claude Code.** Cue types into the session's iTerm2 tab, or into its tmux pane when Claude runs inside tmux. tmux works the same in Ghostty, Kitty, WezTerm, Terminal.app or any other terminal, and needs no macOS permission. Before typing anything, Cue checks that the session is idle, that its Claude process runs in the foreground of that tab or pane, and that Claude's input box sits on screen with no spinner above it. Then it:
 
@@ -164,6 +164,8 @@ Cue is ad-hoc signed, so macOS treats each rebuild as a new app and asks for Aut
 **No notifications from Cue.** Check System Settings > Notifications > Cue. Notifications post for changes Cue sees while it runs; a turn that ended while Cue was quit doesn't notify later.
 
 **Open on a tmux row only brings iTerm2 forward.** Selecting the exact tab needs Cue's Automation permission for iTerm2, which macOS asks for again after each `./install.sh`. Allow it, or turn Cue on under System Settings > Privacy & Security > Automation.
+
+**Cue says Claude's input box isn't on screen, but you see it.** Cue keeps the screen it read in `~/.cue/unreadable-screen.txt`. Usually something covered the box for a moment (a menu, a dialog, a survey); send again. If it keeps happening, Claude Code may have changed its layout: check the kept screen with `CUE_SCREEN_FILE=~/.cue/unreadable-screen.txt swift test --filter LiveScreen` in the cue folder, and report it with that file.
 
 **Look at the raw data.** Each session is a JSON file in `~/.cue/sessions/`. Hook errors go to `~/.cue/hook.log`.
 

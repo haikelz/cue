@@ -235,6 +235,7 @@ Live sessions reload `~/.claude/settings.json` and `~/.codex/hooks.json` when th
 | `~/.cue/sessions/*.json` | One file per session |
 | `~/.cue/inbox/‹thread›/` | Amp prompts waiting for the plugin, and its receipts |
 | `~/.cue/config.json` | The `codex` and `tmux` paths and PATH from install time |
+| `~/.cue/unreadable-screen.txt` | The last screen where a send found no Claude input box, mode 0600, for checking a layout change |
 | `~/.cue/notifier.pid` | The app's process id, while it posts notifications; hooks and the Amp plugin then skip their banner |
 | `~/.cue/hook.log` | Hook errors |
 | `~/.cue/.lock` | The lock file |
