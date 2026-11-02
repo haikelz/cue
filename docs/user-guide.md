@@ -33,10 +33,10 @@ The header shows a count such as "2 waiting · 1 working". Each session is a rou
 - **Send**, and the **Open** arrow for Claude Code and Amp rows.
 - **A note** under the prompt box when something needs your attention. See [Row messages](#row-messages).
 
-The footer shows whether Cue's hooks are installed, a reminder of ⌃⌥Space, and a gear menu with **Open at Login** and **Quit Cue** (⌘Q). Cue opens at login unless you turn that off there.
+The footer shows whether Cue's hooks are installed, a reminder of ⌃⌥Space, and a gear menu with **Open at Login**, **Play Sounds** and **Quit Cue** (⌘Q). Cue opens at login and plays sounds unless you turn those off there.
 
 <p align="center">
-  <img src="images/gear-menu.png" width="440" alt="The footer's gear menu, open, with Open at Login and Quit Cue">
+  <img src="images/gear-menu.png" width="450" alt="The footer's gear menu, open, with Open at Login, Play Sounds checked, and Quit Cue">
 </p>
 
 Above the footer, an orange banner appears when Codex won't run Cue's hooks:
@@ -93,7 +93,9 @@ Cue posts a notification for every agent, in every terminal:
 
 Click one to open Cue on that session, scrolled to it with its reply expanded, and the cursor in its prompt box when it takes prompts. Each session keeps one notification, replaced by the next. Esc and interrupted turns stay quiet. While the popover is open, macOS shows no banner.
 
-The first time Cue starts, macOS asks whether it may send notifications: click Allow, or turn Cue on later in System Settings > Notifications. Change its sound or banner style there too; with the alert style set to None, Cue counts its notifications as off.
+Claude Code and Codex sessions also play the sounds Amp plays for its own threads: Submarine when a turn ends or stops, Ping when a session starts waiting on you. They play whether or not notifications are allowed, and during a Focus too, as Amp's do; turn them off with **Play Sounds** in the gear menu. Amp plays its own sounds, so Cue adds none for Amp, and Cue's banners stay silent.
+
+The first time Cue starts, macOS asks whether it may send notifications: click Allow, or turn Cue on later in System Settings > Notifications. Change its banner style there too; with the alert style set to None, Cue counts its notifications as off.
 
 When Cue is quit, or its notifications are off, Claude Code and Amp fall back to the terminal banner: iTerm2 shows "‹project› finished: ‹first line›", with notifications allowed for iTerm2. Inside tmux that banner doesn't arrive. Codex's own notifications (`notifications` under `[tui]` in `~/.codex/config.toml`) would double Cue's, so leave them off.
 
@@ -163,6 +165,8 @@ Cue is ad-hoc signed, so macOS treats each rebuild as a new app and asks for Aut
 
 **No notifications from Cue.** Check System Settings > Notifications > Cue. Notifications post for changes Cue sees while it runs; a turn that ended while Cue was quit doesn't notify later.
 
+**Two sounds when a Claude turn ends.** With Cue's notifications off, iTerm2 posts the fallback banner with its own sound, and Cue plays Submarine besides. Allow Cue's notifications, which turns that banner off, or turn off iTerm2's notification sound in System Settings > Notifications > iTerm2.
+
 **Open on a tmux row only brings iTerm2 forward.** Selecting the exact tab needs Cue's Automation permission for iTerm2, which macOS asks for again after each `./install.sh`. Allow it, or turn Cue on under System Settings > Privacy & Security > Automation.
 
 **Cue says Claude's input box isn't on screen, but you see it.** Cue keeps the screen it read in `~/.cue/unreadable-screen.txt`. Usually something covered the box for a moment (a menu, a dialog, a survey); send again. If it keeps happening, Claude Code may have changed its layout: check the kept screen with `CUE_SCREEN_FILE=~/.cue/unreadable-screen.txt swift test --filter LiveScreen` in the cue folder, and report it with that file.
@@ -174,7 +178,7 @@ Cue is ad-hoc signed, so macOS treats each rebuild as a new app and asks for Aut
 ## Limitations
 
 - Claude Code delivery works in iTerm2 tabs, and in tmux panes in any terminal. Other terminals without tmux are read only.
-- Cue's notifications need Cue running. Quit, Claude Code and Amp fall back to the terminal banner, which doesn't arrive inside tmux.
+- Cue's notifications and sounds need Cue running. Quit, Claude Code and Amp fall back to the terminal banner, which doesn't arrive inside tmux.
 - A multi-line draft taller than Claude's input box may not fully clear before Cue types.
 - Cue reads Claude Code's screen layout, so a Claude Code UI change can make sends refuse until Cue updates. It refuses rather than types blind. See [Development](development.md#when-an-agent-updates).
 - Codex rows have no Open, and a prompt sent to a Codex session whose terminal you closed runs in the background.

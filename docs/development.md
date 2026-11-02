@@ -9,7 +9,7 @@
 | `Sources/CueCore/Store.swift` | The session files, the lock, and `config.json` |
 | `Sources/CueCore/Proc.swift` | Process facts from `sysctl` |
 | `Sources/CueCore/Hook.swift` | Hook mode for Claude Code and Codex: event to status, the fallback banner |
-| `Sources/CueCore/Alert.swift` | Which session change notifies and what it says; the `notifier.pid` handshake |
+| `Sources/CueCore/Alert.swift` | Which session change notifies, what it says and which sound plays; the `notifier.pid` handshake |
 | `Sources/CueCore/Codex.swift` | `codex queue`, which Codex sessions are interactive, and the hook health check |
 | `Sources/CueCore/Delivery.swift` | Sending: the agent switch, Claude typing with its checks, `sanitize`, key chunks, `DeliveryError` |
 | `Sources/CueCore/Terminal.swift` | The `Terminal` protocol and its two terminals, `ITermTab` (AppleScript) and `TmuxPane` (tmux CLI) |
@@ -21,7 +21,7 @@
 | `Sources/cue/AppModel.swift` | The popover's state: sort order, one `RowState` per row, sending and confirmation |
 | `Sources/cue/Worker.swift` | A serial queue behind an async API, for blocking calls |
 | `Sources/cue/PopoverView.swift`, `RowView.swift` | The SwiftUI views |
-| `Sources/cue/Notifier.swift` | Posts notifications and opens the popover on a click |
+| `Sources/cue/Notifier.swift` | Plays sounds, posts notifications, and opens the popover on a click |
 | `Sources/cue/LoginItem.swift` | The login item, through `SMAppService` |
 | `Sources/cue/HotKey.swift` | The ⌃⌥Space global shortcut |
 | `Sources/cue/SendCommand.swift` | `cue send` (`cue open` and `codex-health` live in `main.swift`) |

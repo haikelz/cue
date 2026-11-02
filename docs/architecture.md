@@ -188,6 +188,8 @@ The plugin checks each inbox file before trusting it: a name of the form `<uuid>
 
 The app posts notifications itself, for every agent and terminal. Each second, after it rereads the session files, `Notifier` compares each session with the last poll: a `finished_at` that moved posts "‹agent · project› finished" with the reply's first line ("stopped" for an API error), and a move into `needs_you` posts "needs you", and wins when both land in one poll. A session seen for the first time only sets the baseline, so starting Cue doesn't replay old turns. Each notification uses the session id as its identifier, so a newer one replaces the older, and a click opens the popover on that session.
 
+The same comparison plays a system sound for Claude and Codex, the one Amp plays for its own threads (its binary runs `afplay` on them): `Ping.aiff` when a session starts waiting on you, else `Submarine.aiff` when a turn ended, one sound per poll. `NSSound` needs no notification permission, so the sounds play with notifications off; Play Sounds in the gear menu (the `playSounds` default) turns them off. Amp plays its own, so `Agent.playsOwnSounds` leaves Amp sessions out, and the banners carry no sound.
+
 The terminal banner (OSC 9) stays as the fallback. While macOS lets Cue notify, Cue keeps its process id in `~/.cue/notifier.pid`; the Claude hook and the Amp plugin skip their banner while that process runs and is Cue, so a file left by a crash brings the banner back. Cue rechecks its permission every 10 seconds and when the popover opens, and releases the file when you turn its notifications off, set their alert style to None, or quit. Banners show while Cue is the active app too, except while the popover is open.
 
 Cue registers itself as a login item through `SMAppService` on its first launch. After that, the gear menu and System Settings decide, and the menu shows what macOS reports. Cue registers again at launch only when a reinstall left no registration and you never turned it off. `uninstall.sh` takes it out of your login items before deleting the app.
@@ -206,7 +208,7 @@ Two targets build one binary. `CueCore` imports Foundation only and holds everyt
 | Storage | `Store`, `Config`, `Proc` | Session files, the lock, install-time paths, process facts |
 | Reporting | `Hook` | Turns a hook event into a session file update |
 | Delivery | `Delivery`, `Terminal` (`ITermTab`, `TmuxPane`), `Codex`, `Inbox` | Sends a prompt through the session's agent; Claude's safety checks run once, on any `Terminal` |
-| Notifications | `Alert`, `NotifierFile` (CueCore); `Notifier` (app) | Which change notifies and what it says; who posts the banner |
+| Notifications | `Alert`, `NotifierFile` (CueCore); `Notifier` (app) | Which change notifies, what it says and which sound plays; who posts the banner |
 | App | `SessionMonitor`, `AppModel`, `Worker`, `LoginItem` | Polls the files and repairs rows; holds what the popover shows; runs blocking calls; the login item |
 | UI | `AppDelegate`, `PopoverView`, `RowView` | The menubar item, the popover, a row |
 
