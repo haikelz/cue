@@ -53,7 +53,7 @@ The app reads `Bundle.main.executablePath` to tell whether its Claude hooks are 
 git tag v0.5.0 && git push origin v0.5.0
 ```
 
-`.github/workflows/release.yml` checks the tag matches `Info.plist`, runs the unit tests and `tests/check.sh`, builds the bundle, and attaches `cue-0.5.0.zip` (the app, both scripts, the Amp plugin, the docs) to a GitHub Release with generated notes.
+`.github/workflows/release.yml` checks the tag matches `Info.plist`, runs the unit tests and `tests/check.sh`, builds the bundle, and attaches `cue-0.5.0.zip` (the app, both scripts, the Amp plugin, the docs, the license) to a GitHub Release with generated notes.
 
 Each `./install.sh` from source re-signs the app ad hoc, and macOS asks for Automation permission again on the next Claude Code Send. Changing Cue's Codex hook command string makes Codex ask you to trust the hooks again in `/hooks`.
 

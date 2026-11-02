@@ -1,7 +1,7 @@
 name: Release
 
 # Pushing a tag such as v0.5.0 tests that commit, builds Cue.app, and attaches cue-0.5.0.zip to a
-# GitHub Release. The zip holds the app, install.sh and uninstall.sh, the Amp plugin and the docs;
+# GitHub Release. The zip holds the app, install.sh and uninstall.sh, the Amp plugin, the docs and the license;
 # install.sh installs the built app without Swift. The runner builds for Apple silicon only.
 on:
   push:
@@ -39,7 +39,7 @@ jobs:
         run: |
           name="cue-${GITHUB_REF_NAME#v}"
           ./install.sh --bundle "dist/$name/Cue.app"
-          cp -R install.sh uninstall.sh plugins docs README.md "dist/$name/"
+          cp -R install.sh uninstall.sh plugins docs README.md LICENSE "dist/$name/"
           ditto -c -k --keepParent "dist/$name" "dist/$name.zip"
 
       - name: Publish
