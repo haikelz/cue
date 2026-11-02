@@ -1,4 +1,5 @@
 @testable import CueCore
+import Foundation
 import Testing
 
 /// Which session changes post a notification, and what it says.
@@ -61,6 +62,21 @@ import Testing
         #expect(tracker.changes(in: [ended("New turn.", at: 200)]).map(\.alert) == [.finished(reply: "New turn.")])
         #expect(tracker.changes(in: []).isEmpty)  // the session went away
         #expect(tracker.changes(in: [ended("Back again.", at: 300)]).isEmpty)  // it came back: baseline again
+    }
+
+    @Test func claudeAndCodexGetAmpsSoundsAndAmpKeepsItsOwn() {
+        var asking = working
+        asking.status = .needsYou
+        var codex = ended("Done.")
+        codex.agent = .codex
+        var amp = codex
+        amp.agent = .amp
+        #expect(Alert.sound(for: [(codex, .finished(reply: "Done."))]) == "Submarine")
+        #expect(Alert.sound(for: [(ended("Error"), .stopped(reason: "Error"))]) == "Submarine")
+        #expect(Alert.sound(for: [(codex, .finished(reply: "Done.")), (asking, .needsYou)]) == "Ping")  // one sound, waiting first
+        #expect(Alert.sound(for: [(amp, .needsYou)]) == nil)
+        #expect(Alert.sound(for: []) == nil)
+        for name in ["Submarine", "Ping"] { #expect(FileManager.default.fileExists(atPath: "/System/Library/Sounds/\(name).aiff")) }
     }
 
     @Test func longRepliesAreCut() {

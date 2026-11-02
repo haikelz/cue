@@ -1,10 +1,11 @@
+import AppKit
 import CueCore
-import Foundation
 import UserNotifications
 
 /// Posts Cue's notifications: a turn that ended, or a session that started waiting on you. One per
 /// session, each replacing the one before; clicking one opens Cue on that session. They show while
 /// Cue is the active app too (it stays active after the popover closes), except while the popover is open.
+/// The same changes play Amp's sounds for Claude and Codex, notifications allowed or not; the banners stay silent.
 @MainActor
 final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     /// Called with the session id of a notification you clicked.
@@ -14,6 +15,10 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     private var tracker = AlertTracker()
     private var allowed = false
 
+    /// The gear menu's Play Sounds, on unless you turned it off.
+    nonisolated static let soundsKey = "playSounds"
+    private var playsSounds: Bool { UserDefaults.standard.object(forKey: Self.soundsKey) as? Bool ?? true }
+
     /// A build run from .build/ has no bundle, and UNUserNotificationCenter crashes without one.
     private var available: Bool { Bundle.main.bundleURL.pathExtension == "app" }
 
@@ -22,7 +27,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         guard available else { return }
         UNUserNotificationCenter.current().delegate = self
         Task {
-            _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
+            _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert])
             await refresh()
         }
     }
@@ -47,17 +52,18 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
 
     func stop() { NotifierFile.release() }
 
-    /// Posts what changed since the last poll. The tracker runs even while notifications are off, so
-    /// turning them on doesn't replay what happened meanwhile.
+    /// Sounds and posts what changed since the last poll. The tracker runs even while notifications are
+    /// off, so turning them on doesn't replay what happened meanwhile.
     func update(_ sessions: [Session], name: (Session) -> String) {
-        for (s, alert) in tracker.changes(in: sessions) where allowed { post(alert, for: s, name: name(s)) }
+        let changes = tracker.changes(in: sessions)
+        if playsSounds, let sound = Alert.sound(for: changes) { NSSound(named: sound)?.play() }
+        for (s, alert) in changes where allowed { post(alert, for: s, name: name(s)) }
     }
 
     private func post(_ alert: Alert, for s: Session, name: String) {
         let content = UNMutableNotificationContent()
         content.title = alert.title(name)
         content.body = alert.body
-        content.sound = .default
         content.threadIdentifier = s.sessionId
         content.userInfo = ["session": s.sessionId]
         // The session id as the identifier: a newer notification for a session replaces the older one.
@@ -67,7 +73,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     /// Without this, macOS drops every banner while Cue is the active app.
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                             willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        await MainActor.run { popoverShown() } ? [] : [.banner, .list, .sound]
+        await MainActor.run { popoverShown() } ? [] : [.banner, .list]
     }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {

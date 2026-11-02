@@ -21,6 +21,14 @@ package enum Alert: Equatable, Sendable {
         case .needsYou: "A permission prompt or a question is waiting in the terminal."
         }
     }
+
+    /// The macOS sound to play for one poll's changes, the one Amp plays for its own: Ping when a session
+    /// waits on you, else Submarine when a turn ended. Amp sessions count for nothing, since Amp plays its own.
+    package static func sound(for changes: [(session: Session, alert: Alert)]) -> String? {
+        let alerts = changes.filter { !$0.session.agent.playsOwnSounds }.map(\.alert)
+        if alerts.contains(.needsYou) { return "Ping" }
+        return alerts.isEmpty ? nil : "Submarine"
+    }
 }
 
 extension Session {

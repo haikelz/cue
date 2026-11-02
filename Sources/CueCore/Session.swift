@@ -44,6 +44,14 @@ package enum Agent: String, Codable, Sendable {
         case .amp: false
         }
     }
+
+    /// Amp plays a sound when a turn ends or waits on you. Cue plays the same ones for the others.
+    package var playsOwnSounds: Bool {
+        switch self {
+        case .claude, .codex: false
+        case .amp: true
+        }
+    }
 }
 
 /// A session's state as its hooks or plugin report it. The raw values are the session file's.

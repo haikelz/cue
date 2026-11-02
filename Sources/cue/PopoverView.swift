@@ -63,6 +63,7 @@ struct PopoverView: View {
     @State private var shown = false
     @State private var scrollTarget: String?
     @State private var openAtLogin = LoginItem.isOn
+    @AppStorage(Notifier.soundsKey) private var playSounds = true
 
     /// Opens the reply of the session a notification named and puts the cursor in its prompt box.
     private func openRequested() -> Bool {
@@ -107,6 +108,7 @@ struct PopoverView: View {
                 if LoginItem.wanted && LoginItem.needsApproval {
                     Button("Allow Cue in Login Items…") { SMAppService.openSystemSettingsLoginItems() }
                 }
+                Toggle("Play Sounds", isOn: $playSounds)
                 Divider()
                 Button("Quit Cue") { NSApp.terminate(nil) }.keyboardShortcut("q")
             } label: {
