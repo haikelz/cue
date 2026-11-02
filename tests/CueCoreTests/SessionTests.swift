@@ -37,6 +37,9 @@ import Testing
                 == [nil, nil, nil, nil, "unix:/tmp/kitty-77", "2", nil])
         // kitty without listen_on, or listening on TCP: the window is known, typing isn't possible.
         #expect(place(["KITTY_WINDOW_ID": "2"]) == [nil, nil, nil, nil, nil, "2", nil])
+        // VS Code opened from an iTerm2 shell keeps ITERM_SESSION_ID; an empty TMUX means no tmux.
+        #expect(place(["ITERM_SESSION_ID": "w0t1p0:ABC", "TERM_PROGRAM": "vscode"]) == [nil, nil, nil, nil, nil, nil, nil])
+        #expect(place(iterm.merging(["TMUX": ""]) { $1 }) == [nil, nil, nil, nil, nil, nil, "ABC"])
         #expect(place(["KITTY_WINDOW_ID": "2", "KITTY_LISTEN_ON": "tcp:10.0.0.5:9000"]) == [nil, nil, nil, nil, nil, "2", nil])
         #expect(place(["TERM_PROGRAM": "WezTerm", "WEZTERM_PANE": "4;rm", "WEZTERM_UNIX_SOCKET": "/u/s"]) == [nil, nil, nil, nil, nil, nil, nil])
         #expect(place(["TMUX": "/tmp/tmux-501/default,42,0", "TMUX_PANE": "%3;kill"]) == [nil, nil, nil, nil, nil, nil, nil])

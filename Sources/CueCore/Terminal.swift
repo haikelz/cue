@@ -47,7 +47,7 @@ extension Session {
     mutating func setTerminal(from env: [String: String]) {
         let number = { (v: String?) in v.flatMap { !$0.isEmpty && $0.allSatisfy { $0.isASCII && $0.isNumber } ? $0 : nil } }
         (tmuxSocket, tmuxPane, weztermSocket, weztermPane, kittySocket, kittyWindow, itermSessionId) = (nil, nil, nil, nil, nil, nil, nil)
-        if let tmux = env["TMUX"] {
+        if let tmux = env["TMUX"], !tmux.isEmpty {
             // $TMUX is "<socket>,<server pid>,<session>". The pane is the only target.
             let socket = tmux.split(separator: ",", omittingEmptySubsequences: false).dropLast(2).joined(separator: ",")
             let pane = env["TMUX_PANE"] ?? ""
@@ -63,7 +63,8 @@ extension Session {
             }
         } else if let window = number(env["KITTY_WINDOW_ID"]) {  // kitty with its TERM set in kitty.conf
             (kittyWindow, kittySocket) = (window, kittyListen(env))
-        } else {
+        } else if env["TERM_PROGRAM"] == "iTerm.app" {
+            // Any other terminal opened from an iTerm2 shell (VS Code's, say) still carries ITERM_SESSION_ID.
             itermSessionId = env["ITERM_SESSION_ID"]?.split(separator: ":").last.map(String.init)
         }
     }
