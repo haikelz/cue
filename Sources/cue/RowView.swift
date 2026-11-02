@@ -68,7 +68,10 @@ struct RowView: View {
     private var canOpen: Bool { session.agent.canOpen && (session.itermSessionId != nil || session.tmuxPane != nil) }
 
     private func placeholder(_ target: Bool) -> String {
-        if !target { return "Start Claude in iTerm2 or tmux to send from here" }
+        if !target {
+            return session.kittyWindow != nil ? "Turn on kitty's remote control to send from here"
+                : "Start Claude in iTerm2, WezTerm, kitty or tmux to send from here"
+        }
         if !session.agent.queuesWhileBusy { return session.status == .needsYou ? "Answer in the terminal" : "Next prompt" }
         return session.status == .idle ? "Next prompt" : "Queue a prompt"
     }

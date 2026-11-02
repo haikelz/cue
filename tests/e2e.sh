@@ -180,6 +180,81 @@ else
   print "skip  tmux: install tmux"
 fi
 
+# 6c. WezTerm and kitty, each headless: a WezTerm mux server, a hidden kitty with remote control on.
+# draft_send <name> <row> <send-keys function> <screen function>: a 12-line draft, a send over it, the
+# prompt alone. Claude Code writes no transcript in these terminals, so the screen shows what arrived.
+draft_send() {
+  local row=$2 word=${(U)1}  # wait_for evals its condition with its own $2
+  for i in {1..12}; do (( i > 1 )) && print -n $'\e\r' | $3; print -n "$1 draft line $i" | $3; done; sleep 0.5
+  check "$1 send over a draft confirmed" "$($BIN send $row "Reply with the single word $word and nothing else")" confirmed
+  wait_for 60 '[[ $(field $row status) == idle ]]'
+  check "$1 Claude answered" "$(field $row last_message)" $word
+  local screen=$($4)
+  check "$1 prompt arrived alone" "$([[ $screen == *"❯ Reply with the single word $word and nothing else"* && $screen != *"draft line"* ]] && print yes)" yes
+}
+# wait_row <field> <value>: the Claude row whose terminal field holds value, after clearing the trust prompt.
+wait_row() {
+  local id=""
+  for i in {1..60}; do
+    [[ $($4) == *"Yes, I trust this folder"* ]] && { print -n $'\e[B' | $3; sleep 0.3; print -n $'\r' | $3; }
+    id=$(jq -r --arg v "$2" "select(.$1 == \$v) | .session_id" $SESSIONS/*.json 2>/dev/null | head -1); [[ -n $id ]] && break
+    sleep 0.5
+  done
+  print $id
+}
+
+WZ=(/Applications/WezTerm.app/Contents/MacOS/wezterm(N) ~/Applications/WezTerm.app/Contents/MacOS/wezterm(N))
+if (( $#WZ )); then
+  mkdir -p $W/wezterm
+  print "return { unix_domains = { { name = 'unix', socket_path = '$W/wezterm.sock' } } }" > $W/wezterm.lua
+  WEZTERM_CONFIG_FILE=$W/wezterm.lua ${WZ[1]:h}/wezterm-mux-server --daemonize
+  wz() { WEZTERM_UNIX_SOCKET=$W/wezterm.sock ${WZ[1]} cli --no-auto-start "$@"; }
+  wait_for 10 '[[ -S $W/wezterm.sock ]]'
+  wpane=$(wz spawn --new-window --cwd $W/wezterm -- claude --settings $W/settings.json)
+  wsend() { wz send-text --no-paste --pane-id $wpane; }
+  wscreen() { wz get-text --pane-id $wpane; }
+  Z=$(wait_row wezterm_pane $wpane wsend wscreen)
+  check "WezTerm session registered" "$([[ -n $Z && $(field $Z wezterm_socket) == $W/wezterm.sock ]] && print yes)" yes
+  if [[ -n $Z ]]; then
+    sleep 2
+    draft_send wezterm $Z wsend wscreen
+    check "Open selects the WezTerm pane" "$($BIN open $Z)" 'bring forward: [CueCore.AppRef.bundle("com.github.wez.wezterm")]'
+    wz kill-pane --pane-id $wpane; sleep 1
+    out=$($BIN send $Z 'nope' 2>&1)
+    check "send to a closed WezTerm pane refused" "$([[ $out == "Claude process is gone" || $out == "WezTerm pane is closed" || $out == "Session is gone" ]] && print refused)" refused
+    rm -f $SESSIONS/$Z.json
+  fi
+  kill $(lsof -t $W/wezterm.sock 2> /dev/null) 2> /dev/null
+else
+  print "skip  WezTerm: install WezTerm"
+fi
+
+KT=(/Applications/kitty.app/Contents/MacOS/kitten(N) ~/Applications/kitty.app/Contents/MacOS/kitten(N))
+if (( $#KT )); then
+  mkdir -p $W/kitty
+  ${KT[1]:h}/kitty --config NONE -o allow_remote_control=socket-only -o listen_on=unix:$W/kitty.sock --start-as=hidden sleep 900 &!
+  kpid=$!
+  kt() { ${KT[1]} @ --to unix:$W/kitty.sock-$kpid "$@"; }
+  wait_for 10 '[[ -S $W/kitty.sock-$kpid ]]'
+  kwin=$(kt launch --type=tab --cwd $W/kitty claude --settings $W/settings.json)
+  ksend() { kt send-text --match id:$kwin --stdin; }
+  kscreen() { kt get-text --match id:$kwin; }
+  K=$(wait_row kitty_window $kwin ksend kscreen)
+  check "kitty session registered" "$([[ -n $K && $(field $K kitty_socket) == unix:$W/kitty.sock-$kpid ]] && print yes)" yes
+  if [[ -n $K ]]; then
+    sleep 2
+    draft_send kitty $K ksend kscreen
+    check "Open selects the kitty window" "$($BIN open $K)" 'bring forward: [CueCore.AppRef.bundle("net.kovidgoyal.kitty")]'
+    kt close-window --match id:$kwin; sleep 1
+    out=$($BIN send $K 'nope' 2>&1)
+    check "send to a closed kitty window refused" "$([[ $out == "Claude process is gone" || $out == "kitty window is closed" || $out == "Session is gone" ]] && print refused)" refused
+    rm -f $SESSIONS/$K.json
+  fi
+  kill $kpid 2> /dev/null
+else
+  print "skip  kitty: install kitty"
+fi
+
 # 7. Amp: the plugin lists the thread you have open and delivers through the inbox.
 if command -v amp > /dev/null && cmp -s plugins/amp/cue.ts ~/.config/amp/plugins/cue.ts; then
   mkdir -p $W/amp

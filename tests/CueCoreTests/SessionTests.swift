@@ -16,6 +16,42 @@ import Testing
         #expect([Agent.claude, .codex, .amp].map(\.name) == ["Claude", "Codex", "Amp"])
     }
 
+    @Test func theShellsEnvironmentNamesItsTerminal() {
+        func place(_ env: [String: String]) -> [String?] {
+            var s = session(.claude)
+            s.itermSessionId = "old"  // a previous event's terminal is forgotten
+            s.setTerminal(from: env)
+            return [s.tmuxSocket, s.tmuxPane, s.weztermSocket, s.weztermPane, s.kittySocket, s.kittyWindow, s.itermSessionId]
+        }
+        let iterm = ["ITERM_SESSION_ID": "w0t1p0:ABC", "TERM_PROGRAM": "iTerm.app"]
+        #expect(place(iterm) == [nil, nil, nil, nil, nil, nil, "ABC"])
+        #expect(place(iterm.merging(["TMUX": "/tmp/tmux-501/default,42,0", "TMUX_PANE": "%3"]) { $1 })
+                == ["/tmp/tmux-501/default", "%3", nil, nil, nil, nil, nil])
+        // WezTerm or kitty started from an iTerm2 shell keeps its ITERM_SESSION_ID.
+        #expect(place(iterm.merging(["TERM_PROGRAM": "WezTerm", "WEZTERM_PANE": "4", "WEZTERM_UNIX_SOCKET": "/u/gui-sock-9"]) { $1 })
+                == [nil, nil, "/u/gui-sock-9", "4", nil, nil, nil])
+        #expect(place(iterm.merging(["KITTY_WINDOW_ID": "2", "KITTY_LISTEN_ON": "unix:/tmp/kitty-77"]) { $1 })
+                == [nil, nil, nil, nil, "unix:/tmp/kitty-77", "2", nil])
+        // kitty started from a WezTerm shell keeps WezTerm's TERM_PROGRAM and pane; its TERM is its own.
+        let wezterm = ["TERM_PROGRAM": "WezTerm", "WEZTERM_PANE": "4", "WEZTERM_UNIX_SOCKET": "/u/gui-sock-9", "TERM": "xterm-256color"]
+        #expect(place(wezterm.merging(["KITTY_WINDOW_ID": "2", "KITTY_LISTEN_ON": "unix:/tmp/kitty-77", "TERM": "xterm-kitty"]) { $1 })
+                == [nil, nil, nil, nil, "unix:/tmp/kitty-77", "2", nil])
+        // kitty without listen_on, or listening on TCP: the window is known, typing isn't possible.
+        #expect(place(["KITTY_WINDOW_ID": "2"]) == [nil, nil, nil, nil, nil, "2", nil])
+        #expect(place(["KITTY_WINDOW_ID": "2", "KITTY_LISTEN_ON": "tcp:10.0.0.5:9000"]) == [nil, nil, nil, nil, nil, "2", nil])
+        #expect(place(["TERM_PROGRAM": "WezTerm", "WEZTERM_PANE": "4;rm", "WEZTERM_UNIX_SOCKET": "/u/s"]) == [nil, nil, nil, nil, nil, nil, nil])
+        #expect(place(["TMUX": "/tmp/tmux-501/default,42,0", "TMUX_PANE": "%3;kill"]) == [nil, nil, nil, nil, nil, nil, nil])
+    }
+
+    @Test func aKittyWindowWithoutRemoteControlIsReadOnly() {
+        var s = session(.claude)
+        s.tty = "/dev/ttys001"
+        s.setTerminal(from: ["KITTY_WINDOW_ID": "2"])
+        #expect(!s.deliverable)
+        s.setTerminal(from: ["KITTY_WINDOW_ID": "2", "KITTY_LISTEN_ON": "unix:/tmp/kitty-77"])
+        #expect(s.deliverable)
+    }
+
     @Test func statusOrderPutsNeedsYouFirst() {
         #expect([Status.working, .idle, .needsYou].sorted { $0.rank < $1.rank } == [.needsYou, .idle, .working])
     }

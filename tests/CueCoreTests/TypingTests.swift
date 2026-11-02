@@ -146,6 +146,6 @@ import Testing
         s.tty = nil
         let outcome = Delivery.typeIntoClaude(s, "hello", on: FakeTerminal([""]), gate: { _ in nil }, keep: { _ in })
         guard case .refused(let why) = outcome else { Issue.record("expected a refusal"); return }
-        #expect(why == "Not in iTerm2 or tmux")
+        #expect(why == "Not in iTerm2, tmux, WezTerm or kitty")
     }
 }

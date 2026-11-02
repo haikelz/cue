@@ -76,21 +76,7 @@ package enum Hook {
             if agent == .claude {
                 // Codex hooks run in its shared daemon, whose environment and process tree say nothing
                 // about the session's tab. Claude hooks run under the session's own claude process.
-                let env = ProcessInfo.processInfo.environment
-                if let tmux = env["TMUX"] {
-                    // $TMUX is "<socket>,<server pid>,<session>". ITERM_SESSION_ID in here is a stale copy from
-                    // whichever tab started the tmux server, so the pane is the only target.
-                    let socket = tmux.split(separator: ",", omittingEmptySubsequences: false).dropLast(2).joined(separator: ",")
-                    let pane = env["TMUX_PANE"] ?? ""
-                    let ok = socket.hasPrefix("/") && pane.range(of: #"^%[0-9]+$"#, options: .regularExpression) != nil
-                    s.tmuxSocket = ok ? socket : nil
-                    s.tmuxPane = ok ? pane : nil
-                    s.itermSessionId = nil
-                } else {
-                    s.itermSessionId = env["ITERM_SESSION_ID"]?.split(separator: ":").last.map(String.init)
-                    s.tmuxSocket = nil
-                    s.tmuxPane = nil
-                }
+                s.setTerminal(from: ProcessInfo.processInfo.environment)
                 if let p = Proc.claude() {
                     s.pid = p.pid
                     s.pidStart = p.start

@@ -1,7 +1,8 @@
 import Foundation
 
 /// What typing into Claude Code needs from a terminal: its screen, its keys, and a way to bring it
-/// forward. An iTerm2 tab answers through AppleScript; a tmux pane, in any terminal, through the tmux CLI.
+/// forward. An iTerm2 tab answers through AppleScript; a tmux pane, in any terminal, through the tmux CLI;
+/// a WezTerm pane and a kitty window through their own CLIs.
 protocol Terminal: Sendable {
     /// The visible text, once the tab or pane is known to still hold `tty`.
     func screen(tty: String, timeout: Double) throws(DeliveryError) -> String
@@ -29,11 +30,59 @@ enum Key {
 }
 
 extension Session {
-    /// Where Claude prompts go: the tmux pane when Claude runs inside tmux, else the iTerm2 tab.
+    /// Where Claude prompts go: the tmux pane when Claude runs inside tmux, else the WezTerm pane, the
+    /// kitty window (with remote control on) or the iTerm2 tab.
     var terminal: (any Terminal)? {
         if let tmuxSocket, let tmuxPane { return TmuxPane(socket: tmuxSocket, pane: tmuxPane) }
+        if let weztermSocket, let weztermPane { return WezTermPane(socket: weztermSocket, pane: weztermPane) }
+        if let kittySocket, let kittyWindow { return KittyWindow(socket: kittySocket, window: kittyWindow) }
         return itermSessionId.map(ITermTab.init(id:))
     }
+}
+
+extension Session {
+    /// Records the terminal a shell's environment names. A terminal started from another's shell
+    /// inherits that one's variables (ITERM_SESSION_ID in a WezTerm opened from iTerm2, say), so the
+    /// checks run from the innermost terminal out.
+    mutating func setTerminal(from env: [String: String]) {
+        let number = { (v: String?) in v.flatMap { !$0.isEmpty && $0.allSatisfy { $0.isASCII && $0.isNumber } ? $0 : nil } }
+        (tmuxSocket, tmuxPane, weztermSocket, weztermPane, kittySocket, kittyWindow, itermSessionId) = (nil, nil, nil, nil, nil, nil, nil)
+        if let tmux = env["TMUX"] {
+            // $TMUX is "<socket>,<server pid>,<session>". The pane is the only target.
+            let socket = tmux.split(separator: ",", omittingEmptySubsequences: false).dropLast(2).joined(separator: ",")
+            let pane = env["TMUX_PANE"] ?? ""
+            if socket.hasPrefix("/"), pane.range(of: #"^%[0-9]+$"#, options: .regularExpression) != nil {
+                (tmuxSocket, tmuxPane) = (socket, pane)
+            }
+        } else if let window = number(env["KITTY_WINDOW_ID"]), env["TERM"] == "xterm-kitty" {
+            // kitty sets TERM but no TERM_PROGRAM, so a kitty started from a WezTerm shell keeps WezTerm's.
+            (kittyWindow, kittySocket) = (window, kittyListen(env))
+        } else if env["TERM_PROGRAM"] == "WezTerm" {
+            if let socket = env["WEZTERM_UNIX_SOCKET"], socket.hasPrefix("/"), let pane = number(env["WEZTERM_PANE"]) {
+                (weztermSocket, weztermPane) = (socket, pane)
+            }
+        } else if let window = number(env["KITTY_WINDOW_ID"]) {  // kitty with its TERM set in kitty.conf
+            (kittyWindow, kittySocket) = (window, kittyListen(env))
+        } else {
+            itermSessionId = env["ITERM_SESSION_ID"]?.split(separator: ":").last.map(String.init)
+        }
+    }
+
+    /// kitty's socket, which exists only with listen_on in kitty.conf; a TCP address would reach past this Mac.
+    private func kittyListen(_ env: [String: String]) -> String? {
+        env["KITTY_LISTEN_ON"].flatMap { $0.hasPrefix("unix:/") ? $0 : nil }
+    }
+}
+
+/// The first of `paths` that runs: an app's own copy before Homebrew's.
+func executable(_ paths: [String?]) -> String? {
+    paths.compactMap { $0 }.first { FileManager.default.isExecutableFile(atPath: $0) }
+}
+
+/// The command inside an app in /Applications or ~/Applications, then on Homebrew's paths.
+func executable(app: String, command: String) -> String? {
+    executable(["/Applications", NSHomeDirectory() + "/Applications"].map { "\($0)/\(app).app/Contents/MacOS/\(command)" }
+               + ["/opt/homebrew/bin/\(command)", "/usr/local/bin/\(command)"])
 }
 
 /// An iTerm2 tab, found by its session id and driven through AppleScript.
@@ -189,15 +238,112 @@ struct TmuxPane: Terminal {
     }
 
     private func tmux(_ args: [String]) throws(DeliveryError) -> String {
-        let exe = [Config.load().tmux, "/opt/homebrew/bin/tmux", "/usr/local/bin/tmux"].compactMap { $0 }
-            .first { FileManager.default.isExecutableFile(atPath: $0) }
-        guard let exe else { throw .failed("Cue doesn't know where tmux is; run install.sh again") }
+        guard let exe = executable([Config.load().tmux, "/opt/homebrew/bin/tmux", "/usr/local/bin/tmux"]) else {
+            throw .failed("Cue doesn't know where tmux is; run install.sh again")
+        }
         do {
             return try Command.run(exe, ["-S", socket] + args, timeout: 10)
         } catch let e where ["can't find", "no server", "error connecting"].contains(where: e.message.contains) {
             throw .closed("tmux pane is closed")
         } catch let e where e.timedOut {
             throw .failed("tmux didn't answer in 10 s")
+        } catch {
+            throw .failed(error.message)
+        }
+    }
+}
+
+/// A WezTerm pane, driven through `wezterm cli` on the socket of the WezTerm that shows it. Keys go with
+/// --no-paste: as a bracketed paste, Claude Code would take the prompt as pasted data.
+struct WezTermPane: Terminal {
+    let socket: String, pane: String
+
+    func screen(tty: String, timeout: Double) throws(DeliveryError) -> String {
+        guard try paneTTY() == tty else { throw .moved("Pane no longer runs this session") }
+        return try cli(["get-text", "--pane-id", pane], timeout: timeout)
+    }
+
+    func send(_ chunks: [[UInt8]], tty: String) throws(DeliveryError) {
+        guard try paneTTY() == tty else { throw .moved("Pane no longer runs this session") }
+        for bytes in chunks {
+            _ = try cli(["send-text", "--no-paste", "--pane-id", pane], input: String(decoding: bytes, as: UTF8.self))
+            usleep(150_000)
+        }
+    }
+
+    func open() throws(DeliveryError) -> [AppRef] {
+        _ = try cli(["activate-pane", "--pane-id", pane])
+        return [.bundle("com.github.wez.wezterm")]
+    }
+
+    private func paneTTY() throws(DeliveryError) -> String {
+        struct Pane: Decodable { let paneId: Int, ttyName: String? }
+        let d = JSONDecoder()
+        d.keyDecodingStrategy = .convertFromSnakeCase
+        let panes = try? d.decode([Pane].self, from: Data(try cli(["list", "--format", "json"]).utf8))
+        guard let tty = panes?.first(where: { String($0.paneId) == pane })?.ttyName else { throw .closed("WezTerm pane is closed") }
+        return tty
+    }
+
+    private func cli(_ args: [String], input: String? = nil, timeout: Double = 10) throws(DeliveryError) -> String {
+        guard let exe = executable(app: "WezTerm", command: "wezterm") else { throw .failed("Cue can't find WezTerm's wezterm command") }
+        var env = ProcessInfo.processInfo.environment
+        env["WEZTERM_UNIX_SOCKET"] = socket
+        do {
+            return try Command.run(exe, ["cli", "--no-auto-start"] + args, input: input, env: env, timeout: timeout)
+        } catch let e where e.message.contains("no such pane") || e.message.contains("failed to connect") {
+            throw .closed("WezTerm pane is closed")
+        } catch let e where e.timedOut {
+            throw .failed("WezTerm didn't answer in \(Int(timeout)) s")
+        } catch {
+            throw .failed(error.message)
+        }
+    }
+}
+
+/// A kitty window, driven through `kitten @` on kitty's listen_on socket; kitty.conf needs
+/// allow_remote_control and listen_on. Keys go on stdin, which kitty sends as is: it would read
+/// escapes such as \\r in an argument.
+struct KittyWindow: Terminal {
+    let socket: String, window: String
+
+    func screen(tty: String, timeout: Double) throws(DeliveryError) -> String {
+        guard try windowTTY() == tty else { throw .moved("Window no longer runs this session") }
+        return try kitten(["get-text", "--match", "id:\(window)"], timeout: timeout)
+    }
+
+    func send(_ chunks: [[UInt8]], tty: String) throws(DeliveryError) {
+        guard try windowTTY() == tty else { throw .moved("Window no longer runs this session") }
+        for bytes in chunks {
+            _ = try kitten(["send-text", "--match", "id:\(window)", "--stdin"], input: String(decoding: bytes, as: UTF8.self))
+            usleep(150_000)
+        }
+    }
+
+    func open() throws(DeliveryError) -> [AppRef] {
+        _ = try kitten(["focus-window", "--match", "id:\(window)"])
+        return [.bundle("net.kovidgoyal.kitty")]
+    }
+
+    /// The tty of the window's shell: kitty lists a window's processes, not its tty.
+    private func windowTTY() throws(DeliveryError) -> String {
+        struct OSWindow: Decodable { let tabs: [Tab] }
+        struct Tab: Decodable { let windows: [Window] }
+        struct Window: Decodable { let id: Int, pid: Int32 }
+        let list = try? JSONDecoder().decode([OSWindow].self, from: Data(try kitten(["ls", "--match", "id:\(window)"]).utf8))
+        let shell = list?.flatMap(\.tabs).flatMap(\.windows).first { String($0.id) == window }
+        guard let shell, let tty = Proc(shell.pid)?.tty else { throw .closed("kitty window is closed") }
+        return tty
+    }
+
+    private func kitten(_ args: [String], input: String? = nil, timeout: Double = 10) throws(DeliveryError) -> String {
+        guard let exe = executable(app: "kitty", command: "kitten") else { throw .failed("Cue can't find kitty's kitten command") }
+        do {
+            return try Command.run(exe, ["@", "--to", socket] + args, input: input, timeout: timeout)
+        } catch let e where e.message.contains("No matching windows") || e.message.contains("Failed to connect") {
+            throw .closed("kitty window is closed")
+        } catch let e where e.timedOut {
+            throw .failed("kitty didn't answer in \(Int(timeout)) s")
         } catch {
             throw .failed(error.message)
         }

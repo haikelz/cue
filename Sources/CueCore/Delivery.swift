@@ -39,7 +39,7 @@ package enum Delivery {
     /// the full set of checks. The tests pass their own terminal and gate, and keep no screens.
     static func typeIntoClaude(_ s: Session, _ text: String, on terminal: (any Terminal)? = nil,
                                gate: (Session) -> String? = liveGate, keep: (String) -> Void = keepUnreadable) -> Outcome {
-        guard let terminal = terminal ?? s.terminal, let tty = s.tty else { return .refused("Not in iTerm2 or tmux") }
+        guard let terminal = terminal ?? s.terminal, let tty = s.tty else { return .refused(Delivery.noTerminal) }
         var lines: [String]
         do { lines = try check(s, on: terminal, tty: tty, gate: gate, keep: keep) } catch { return .refused(error.message) }
 
@@ -212,9 +212,11 @@ package enum Delivery {
         return out
     }
 
+    static let noTerminal = "Not in iTerm2, tmux, WezTerm or kitty"
+
     /// Selects the session's tab or pane; see `Terminal.open`.
     package static func open(_ s: Session) throws(DeliveryError) -> [AppRef] {
-        guard let terminal = s.terminal else { throw .refused("Not in iTerm2 or tmux") }
+        guard let terminal = s.terminal else { throw .refused(Delivery.noTerminal) }
         return try terminal.open()
     }
 }

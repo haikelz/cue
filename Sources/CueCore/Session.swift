@@ -85,15 +85,21 @@ package struct Session: Codable, Equatable, Sendable {
     package var itermSessionId: String?
     package var tmuxSocket: String?  // Claude inside tmux: the server's socket and the session's pane, typed into instead of iTerm2
     package var tmuxPane: String?
+    package var weztermSocket: String?  // Claude in WezTerm: the socket of the WezTerm that shows it, and the pane
+    package var weztermPane: String?
+    package var kittySocket: String?  // Claude in kitty: kitty's listen_on address (none without one in kitty.conf), and the window
+    package var kittyWindow: String?
     package var transcriptPath: String?
     package var turnId: String?     // Codex: the turn UserPromptSubmit started
     package var heartbeat: Double?  // Amp: the plugin rewrites this every 5 s
 
-    /// Claude rows follow the iTerm2 tab or tmux pane, so a draft survives /clear starting a new session.
+    /// Claude rows follow the tab, pane or window, so a draft survives /clear starting a new session.
     /// Codex and Amp rows follow the session: several of their threads can share one tab.
     package var rowKey: String {
         switch agent {
-        case .claude: itermSessionId ?? tmuxPane.map { (tmuxSocket ?? "") + $0 } ?? sessionId
+        case .claude:
+            itermSessionId ?? tmuxPane.map { (tmuxSocket ?? "") + $0 } ?? weztermPane.map { (weztermSocket ?? "") + $0 }
+                ?? kittyWindow.map { (kittySocket ?? "") + $0 } ?? sessionId
         case .codex, .amp: sessionId
         }
     }
@@ -101,7 +107,7 @@ package struct Session: Codable, Equatable, Sendable {
     /// Claude prompts are typed into an iTerm2 tab or a tmux pane; Codex and Amp take them through their own channels.
     package var deliverable: Bool {
         switch agent {
-        case .claude: tty != nil && (itermSessionId != nil || tmuxPane != nil)
+        case .claude: tty != nil && terminal != nil
         case .codex, .amp: true
         }
     }
