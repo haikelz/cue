@@ -32,7 +32,20 @@ const active = observable({ id: A }) // already open when the plugin loads, so n
 const states = { [A]: observable('running'), [B]: observable('idle') }
 const handlers = {}
 const appended = []
-const { default: register } = await import(plugin)
+const { default: register, terminal } = await import(plugin)
+
+// The terminal read from the environment, in the Claude hook's order (SessionTests covers the Swift side).
+const where = (env) => Object.entries(terminal(env)).filter(([, v]) => v !== null)
+const iterm = { ITERM_SESSION_ID: 'w0t1p0:ABC', TERM_PROGRAM: 'iTerm.app' }
+check('the plugin records its iTerm2 tab', where(iterm), [['iterm_session_id', 'ABC']])
+check('a WezTerm opened from iTerm2 is WezTerm', where({ ...iterm, TERM_PROGRAM: 'WezTerm', WEZTERM_PANE: '4', WEZTERM_UNIX_SOCKET: '/u/gui-sock-9' }),
+  [['wezterm_socket', '/u/gui-sock-9'], ['wezterm_pane', '4']])
+check('a kitty opened from WezTerm is kitty', where({ TERM_PROGRAM: 'WezTerm', WEZTERM_PANE: '4', WEZTERM_UNIX_SOCKET: '/u/s', TERM: 'xterm-kitty', KITTY_WINDOW_ID: '2', KITTY_LISTEN_ON: 'unix:/tmp/kitty-7' }),
+  [['kitty_socket', 'unix:/tmp/kitty-7'], ['kitty_window', '2']])
+check('kitty on TCP keeps no socket', where({ ...iterm, KITTY_WINDOW_ID: '2', KITTY_LISTEN_ON: 'tcp:10.0.0.5:9' }), [['kitty_window', '2']])
+check('VS Code opened from iTerm2 is no iTerm2 tab', where({ ITERM_SESSION_ID: 'w0t1p0:ABC', TERM_PROGRAM: 'vscode' }), [])
+check('an empty TMUX is no tmux', where({ ...iterm, TMUX: '' }), [['iterm_session_id', 'ABC']])
+check('an odd pane id is dropped', where({ TERM_PROGRAM: 'WezTerm', WEZTERM_PANE: '4;x', WEZTERM_UNIX_SOCKET: '/u/s' }), [])
 register({
   activeThread: active,
   threads: { get: (id) => ({ state: states[id], appendUserMessage: async (m) => { appended.push(`${id}:${m.content}`) } }) },

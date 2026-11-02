@@ -50,11 +50,34 @@ function notify(tty: string | null, text: string) {
 	} catch {}
 }
 
-/** The tmux socket and pane this Amp runs in, checked as the Claude hook checks them; nulls outside tmux. */
-function tmuxPane(): { socket: string | null; pane: string | null } {
-	const socket = process.env.TMUX?.split(',').slice(0, -2).join(',') ?? ''
-	const pane = process.env.TMUX_PANE ?? ''
-	return socket.startsWith('/') && /^%\d+$/.test(pane) ? { socket, pane } : { socket: null, pane: null }
+/**
+ * The terminal this Amp runs in, read as the Claude hook reads it (Session.setTerminal): tmux first, then
+ * kitty by its TERM, WezTerm, kitty, iTerm2. A terminal started from another's shell inherits that one's
+ * variables, such as ITERM_SESSION_ID in a WezTerm opened from iTerm2.
+ */
+export function terminal(env: NodeJS.ProcessEnv = process.env): Record<string, string | null> {
+	const none = {
+		tmux_socket: null, tmux_pane: null, wezterm_socket: null, wezterm_pane: null,
+		kitty_socket: null, kitty_window: null, iterm_session_id: null,
+	}
+	const number = (v?: string) => (v && /^[0-9]+$/.test(v) ? v : null)
+	// a TCP listen_on address would reach past this Mac
+	const kitty = (window: string) => ({ ...none, kitty_window: window, kitty_socket: env.KITTY_LISTEN_ON?.startsWith('unix:/') ? env.KITTY_LISTEN_ON : null })
+	const kittyWindow = number(env.KITTY_WINDOW_ID)
+	if (env.TMUX) {
+		const socket = env.TMUX.split(',').slice(0, -2).join(',')
+		const pane = env.TMUX_PANE ?? ''
+		return socket.startsWith('/') && /^%[0-9]+$/.test(pane) ? { ...none, tmux_socket: socket, tmux_pane: pane } : none
+	}
+	if (kittyWindow && env.TERM === 'xterm-kitty') return kitty(kittyWindow)
+	if (env.TERM_PROGRAM === 'WezTerm') {
+		const socket = env.WEZTERM_UNIX_SOCKET ?? '', pane = number(env.WEZTERM_PANE)
+		return socket.startsWith('/') && pane ? { ...none, wezterm_socket: socket, wezterm_pane: pane } : none
+	}
+	if (kittyWindow) return kitty(kittyWindow)
+	// any other terminal opened from an iTerm2 shell (VS Code's, say) still carries ITERM_SESSION_ID
+	if (env.TERM_PROGRAM === 'iTerm.app') return { ...none, iterm_session_id: env.ITERM_SESSION_ID?.split(':').pop() || null }
+	return none
 }
 
 /** True while the Cue app posts notifications itself; it keeps its process id in notifier.pid. */
@@ -120,8 +143,6 @@ export default function (amp: PluginAPI) {
 	function attach(id: string): Attached {
 		if (tty === undefined) tty = ampTTY()
 		const file = sessionFile(id)
-		const tab = process.env.ITERM_SESSION_ID?.split(':').pop()
-		const tmux = tmuxPane() // Open selects this pane when Amp runs inside tmux
 		const session: Record<string, unknown> = {
 			session_id: id,
 			agent: 'amp',
@@ -130,9 +151,7 @@ export default function (amp: PluginAPI) {
 			last_message: null,
 			updated_at: now(),
 			pid: process.ppid, // the owning Amp process; another window on this thread won't delete our file
-			iterm_session_id: process.env.TMUX ? null : tab || null,
-			tmux_socket: tmux.socket,
-			tmux_pane: tmux.pane,
+			...terminal(), // where Open goes
 			heartbeat: now(),
 		}
 		const save = () => {
