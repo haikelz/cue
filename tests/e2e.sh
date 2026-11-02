@@ -286,21 +286,30 @@ else
 fi
 
 # 8. Codex: hooks list the session, `codex queue` delivers.
-if grep -q "Cue.app/Contents/MacOS/cue' hook codex" ~/.codex/hooks.json 2> /dev/null; then
+health=$($BIN codex-health $HOME/Applications/Cue.app/Contents/MacOS/cue 2> /dev/null)
+if grep -q "Cue.app/Contents/MacOS/cue' hook codex" ~/.codex/hooks.json 2> /dev/null && [[ $health == ok ]]; then
   mkdir -p $W/codex
   # Rows left by earlier runs in this folder would pass for the new session.
   for f in $SESSIONS/*.json; do [[ $(jq -r '.agent + .cwd' $f) == "codex$W/codex" ]] && rm -f $f; done
   sidC=$($T new); sleep 1
   $T type $sidC "cd $W/codex && codex" > /dev/null; $T key $sidC 13 > /dev/null
-  trusted=yes
+  # Codex's review dialog lists every new or changed hook, other tools' too, and Cue's are trusted
+  # (codex-health said so): skip the dialog with Esc, which trusts nothing, and make sure it closed.
+  trusted=yes reviewed=no
+  review() {
+    [[ $reviewed == yes ]] && return
+    reviewed=yes
+    $T key $sidC 27 > /dev/null; sleep 1
+    [[ $($T screen $sidC | grep -v '^[[:space:]]*$' | tail -4) == *"esc skip"* ]] && trusted=no
+  }
   for i in {1..40}; do
     screen=$($T screen $sidC)
     if [[ $screen == *"Update available"*"enter continue"* ]]; then $T key $sidC 27 > /dev/null  # the dialog, not the banner left after it
     elif [[ $screen == *"Trust this folder"* ]]; then $T key $sidC 13 > /dev/null
-    elif [[ $screen == *"Hooks need review"* || $screen == *"/hooks"* ]]; then trusted=no; break
+    elif [[ $screen == *"Hooks need review"* ]]; then review; [[ $trusted == no ]] && break
     elif [[ $screen == *"Ask Codex to do anything"* ]]; then
       sleep 3  # Codex draws its main screen first and the hooks review dialog a moment later
-      [[ $($T screen $sidC) == *"Hooks need review"* ]] && trusted=no
+      [[ $($T screen $sidC) == *"Hooks need review"* ]] && review
       break
     fi
     sleep 0.5
@@ -328,12 +337,12 @@ if grep -q "Cue.app/Contents/MacOS/cue' hook codex" ~/.codex/hooks.json 2> /dev/
       check "the queued prompt ran" "$(field $C last_message)" QUEUED
     fi
   else
-    print "skip  Codex: trust Cue's hooks in Codex's /hooks first"
+    print "skip  Codex: its hooks review dialog didn't close"
   fi
   $T key $sidC 3 > /dev/null; sleep 0.5; $T key $sidC 3 > /dev/null; sleep 1; $T close $sidC > /dev/null
   [[ -n ${C:-} ]] && rm -f $SESSIONS/$C.json  # Codex reports the end only after 30 unopened minutes
 else
-  print "skip  Codex: run ./install.sh"
+  print "skip  Codex: ${${health:#ok}:-run ./install.sh}"
 fi
 print; (( fails == 0 )) && print "all checks passed" || print "$fails check(s) failed"
 exit $(( fails > 0 ))
