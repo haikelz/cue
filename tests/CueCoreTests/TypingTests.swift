@@ -34,7 +34,7 @@ import Testing
     let session = Session(sessionId: "s", agent: .claude, cwd: "/", status: .idle, updatedAt: 0, tty: "/dev/ttys001")
 
     func type(_ text: String, on terminal: FakeTerminal, gate: String? = nil) -> String {
-        switch Delivery.typeIntoClaude(session, text, on: terminal, gate: { _ in gate }) {
+        switch Delivery.typeIntoClaude(session, text, on: terminal, gate: { _ in gate }, keep: { _ in }) {
         case .sent: "sent"
         case .accepted(let m): "accepted: \(m)"
         case .inbox: "inbox"
@@ -102,7 +102,7 @@ import Testing
     @Test func aSessionWithoutATerminalIsRefused() {
         var s = session
         s.tty = nil
-        let outcome = Delivery.typeIntoClaude(s, "hello", on: FakeTerminal([""]), gate: { _ in nil })
+        let outcome = Delivery.typeIntoClaude(s, "hello", on: FakeTerminal([""]), gate: { _ in nil }, keep: { _ in })
         guard case .refused(let why) = outcome else { Issue.record("expected a refusal"); return }
         #expect(why == "Not in iTerm2 or tmux")
     }

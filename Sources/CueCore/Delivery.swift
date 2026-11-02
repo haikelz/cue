@@ -36,12 +36,12 @@ package enum Delivery {
     }
 
     /// Types the prompt into the session's iTerm2 tab or tmux pane, then presses Return, each step behind
-    /// the full set of checks. The tests pass their own terminal and gate.
+    /// the full set of checks. The tests pass their own terminal and gate, and keep no screens.
     static func typeIntoClaude(_ s: Session, _ text: String, on terminal: (any Terminal)? = nil,
-                               gate: (Session) -> String? = liveGate) -> Outcome {
+                               gate: (Session) -> String? = liveGate, keep: (String) -> Void = keepUnreadable) -> Outcome {
         guard let terminal = terminal ?? s.terminal, let tty = s.tty else { return .refused("Not in iTerm2 or tmux") }
         let lines: [String]
-        do { lines = try check(s, on: terminal, tty: tty, gate: gate) } catch { return .refused(error.message) }
+        do { lines = try check(s, on: terminal, tty: tty, gate: gate, keep: keep) } catch { return .refused(error.message) }
 
         // A draft or a grayed-out suggestion sits in the box: Ctrl+U clears it, once per box line.
         // A real draft stays recoverable with Ctrl+Y in that tab.
@@ -59,7 +59,7 @@ package enum Delivery {
         // Typing a long prompt takes seconds. Before Return, check everything again, and check the box
         // ends with this prompt (a long draft scrolls inside the box, so its start may be out of view).
         do {
-            guard box(try check(s, on: terminal, tty: tty, gate: gate), endsWith: text) else {
+            guard box(try check(s, on: terminal, tty: tty, gate: gate, keep: keep), endsWith: text) else {
                 return .failed("Typed but not sent: the input box doesn't end with this prompt")
             }
         } catch {
@@ -76,11 +76,21 @@ package enum Delivery {
     /// Every check that guards typing, process facts first, then what the terminal shows. Returns the
     /// input box's lines.
     static func check(_ s: Session, on terminal: any Terminal, tty: String,
-                      gate: (Session) -> String?) throws(DeliveryError) -> [String] {
+                      gate: (Session) -> String?, keep: (String) -> Void) throws(DeliveryError) -> [String] {
         if let why = gate(s) { throw .refused(why) }
         let text = try terminal.screen(tty: tty, timeout: 60)
-        if let why = screenProblem(text) { throw .refused(why) }
+        if let why = screenProblem(text) {
+            if box(text) == nil { keep(text) }
+            throw .refused(why)
+        }
         return box(text)?.lines ?? []
+    }
+
+    /// Keeps the last screen where Cue found no input box, in ~/.cue/unreadable-screen.txt (yours only),
+    /// so a Claude Code layout change can be checked against the parser instead of guessed at.
+    static func keepUnreadable(_ screen: String) {
+        let url = Store.root.appendingPathComponent("unreadable-screen.txt")
+        FileManager.default.createFile(atPath: url.path, contents: Data(screen.utf8), attributes: [.posixPermissions: 0o600])
     }
 
     /// The gate on the session file as it is now: the hooks may have changed it since the row was read.
