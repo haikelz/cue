@@ -45,7 +45,17 @@ swift build -c release            # .build/release/cue
 
 The app reads `Bundle.main.executablePath` to tell whether its Claude hooks are installed, so a build run from `.build/` shows "Hooks missing" in the footer. That's expected.
 
-Each `./install.sh` re-signs the app ad hoc, and macOS asks for Automation permission again on the next Claude Code Send. Changing Cue's Codex hook command string makes Codex ask you to trust the hooks again in `/hooks`.
+`./install.sh --bundle <path.app>` only builds the app bundle at that path. In a folder with a built `Cue.app` and no `Package.swift`, which is what a release zip unpacks to, `./install.sh` installs that app instead of building, after clearing its quarantine flag; on an Intel Mac it refuses, since releases are built for Apple silicon.
+
+**Releasing.** Bump `CFBundleShortVersionString` and `CFBundleVersion` in `Info.plist`, commit, then tag and push the tag:
+
+```sh
+git tag v0.5.0 && git push origin v0.5.0
+```
+
+`.github/workflows/release.yml` checks the tag matches `Info.plist`, runs the unit tests and `tests/check.sh`, builds the bundle, and attaches `cue-0.5.0.zip` (the app, both scripts, the Amp plugin, the docs) to a GitHub Release with generated notes.
+
+Each `./install.sh` from source re-signs the app ad hoc, and macOS asks for Automation permission again on the next Claude Code Send. Changing Cue's Codex hook command string makes Codex ask you to trust the hooks again in `/hooks`.
 
 ## The icon
 
@@ -72,15 +82,15 @@ tests/check.sh    # those, then the built binary's behavior
 `tests/check.sh` runs `swift test`, then, with `CUE_DIR` set to a temp folder:
 
 - every Claude Code and Codex status rule, file modes, malformed input, path-like ids, ten parallel hooks, and a 50 ms average per hook run;
-- the tmux fields a Claude hook records, an odd `$TMUX_PANE` rejected, and the fields cleared when a session leaves tmux;
+- the tmux fields a Claude hook records, an odd `$TMUX_PANE` rejected, and the fields cleared when a session leaves tmux (the WezTerm and kitty rules are unit tests);
 - Codex specifics: `codex exec` skipping, a late `Interrupt` from an earlier turn, and a new session retiring the folder's old idle row;
 - Codex delivery against a fake `codex` that records its arguments and PATH, and the footer's hook check against a fake `codex app-server`: all trusted, one changed, another binary's hooks, and an error reply;
 - the Amp inbox, by running the plugin's real `drainInbox` under Node against `cue send`: delivery, two plugin processes delivering once, withdrawal of an unclaimed prompt, an orphaned prompt, the 60 KB cap, a stale heartbeat, and the file checks;
-- the whole Amp plugin, through `tests/amp-plugin.mjs` and a fake PluginAPI: seeding the open thread, state changes, `agent.end`, a `cue send` round trip, and a thread switch.
+- the whole Amp plugin, through `tests/amp-plugin.mjs` and a fake PluginAPI: the terminal it reads from its environment, seeding the open thread, state changes, `agent.end`, a `cue send` round trip, and a thread switch.
 
 It touches nothing outside the temp folder.
 
-**CI.** `.github/workflows/test.yml` runs on GitHub Actions for every push to `master` and every pull request, on a macOS runner with Node 24: `swift test`, then `swift build -c release`, then `tests/check.sh`. CI sets `HOOK_BUDGET_MS=200`, since shared runners run hooks slower than the 50 ms the script allows by default. `tests/e2e.sh` stays local: it drives real Claude Code, Codex and Amp sessions, which need your accounts and iTerm2.
+**CI.** `.github/workflows/test.yml` runs on GitHub Actions for every push to `master` or `dev` and every pull request, on a macOS runner with Node 24: `swift test`, then `swift build -c release`, then `tests/check.sh`. CI sets `HOOK_BUDGET_MS=200`, since shared runners run hooks slower than the 50 ms the script allows by default. `tests/e2e.sh` stays local: it drives real Claude Code, Codex and Amp sessions, which need your accounts and iTerm2.
 
 ```sh
 tests/e2e.sh
@@ -89,9 +99,10 @@ tests/e2e.sh
 Opens iTerm2 windows and drives real sessions through `cue send`:
 
 - **Claude Code** (two sessions): a one-line prompt, a send over a half-typed draft, a 5-line prompt, a permission dialog, a forced-idle file during that dialog, the Ctrl+G editor, Ctrl+Z, and a closed tab.
-- **Claude Code in tmux**, in a detached session on a private socket: a confirmed send, copy mode and synchronized panes refused, Open with no client and with its client in an iTerm2 tab, a two-line prompt with a line ending in `;` over a half-typed draft, Ctrl+Z, and a killed server.
+- **Claude Code in tmux**, in a detached session on a private socket: a confirmed send, copy mode and synchronized panes refused, Open with no client and with its client in an iTerm2 tab, a two-line prompt with a line ending in `;` over a half-typed draft, a send over a 30-line draft with the cursor moved up into it, Ctrl+Z, and a killed server.
+- **Claude Code in WezTerm and kitty**, when installed, each headless (a `wezterm-mux-server` with its own config, a hidden kitty with remote control on): registration, a send over a 12-line draft, the exact prompt, Open, and a closed pane or window.
 - **Amp**, when the installed plugin matches `plugins/amp/cue.ts`: registration, delivery, a send during a running turn, and the heartbeat stopping after the window closes.
-- **Codex**, when Cue's hooks are in `~/.codex/hooks.json` and trusted: registration, a confirmed send, and a queued send during a running turn.
+- **Codex**, when Cue's hooks are in `~/.codex/hooks.json` and trusted: Codex's hooks review dialog lists other tools' hooks too, so the test asks `cue codex-health` and skips that dialog with Esc, trusting nothing; then registration, Open selecting its tab with another window in front, a confirmed send, and a queued send during a running turn.
 
 It makes a few small model calls and closes its windows when done. Don't touch the keyboard while it runs. The Claude sessions use `--settings .spike/e2e/settings.json`, which points their hooks at `.build/release/cue`.
 
@@ -120,7 +131,7 @@ Cue depends on behavior the agents don't promise. After an upgrade, run `tests/e
 | Claude Code | The input box is a `❯` line in column 0 between two `─` rule lines | `Delivery.box` | Save a screen with `tests/iterm.sh screen <iterm-id>` or `tmux capture-pane -p -t <pane>` (or take `~/.cue/unreadable-screen.txt`, kept when a send found no box), then `CUE_SCREEN_FILE=<file> swift test --filter LiveScreen` |
 | Claude Code | The working spinner reads `✻ Word… (` right above the box | `Delivery.isSpinner` | Capture a tab while Claude works |
 | Claude Code | Input that arrives in a burst becomes `<pasted_content>` | `Delivery.keys`, and the 150 ms gap in each `Terminal.send` | Send a long line, grep the transcript for `pasted_content` |
-| Claude Code | ESC + CR inserts a line break; Ctrl+U clears to line start | `Key`, send step 4 | Send a 3-line prompt over a draft |
+| Claude Code | ESC + CR inserts a line break; Ctrl+K and Ctrl+U each clear one line's text or line break, after and before the cursor, and count every key of a one-key burst | `Key`, send step 4 | The e2e send over a 30-line draft |
 | Claude Code | Esc and denials write `[Request interrupted by user…]` | `Session.interrupted` | Interrupt a turn, read the transcript tail |
 | Claude Code | Hooks run as children of a process named `claude` | `Proc.claude()` | `ps -o pid,ppid,comm` from inside a hook |
 | Codex | Hook events and payload fields match the hooks docs, with `Interrupt` and `turn_id` | `Hook.handle` | Read `~/.cue/sessions/*.json` after a turn |
@@ -133,8 +144,8 @@ Update the captures in `tests/CueCoreTests/ScreenTests.swift` when Claude Code's
 
 ## Adding an agent or a terminal
 
-- **An agent:** add a case to `Agent` in `Session.swift`. The compiler then stops at every `switch` that needs it: the agent's name, its liveness, its delivery channel in `Delivery.send`, and its symbol in `RowView`. Rules shared by several agents are properties on `Agent`, such as `queuesWhileBusy` and `canOpen`.
-- **A terminal for Claude Code:** write a type that conforms to `Terminal` (read the screen, send key chunks, open), and return it from `Session.terminal` when the hook recorded what it needs. The safety checks in `Delivery` apply to it unchanged. Kitty (`kitty @ send-text`) and WezTerm (`wezterm cli send-text`) would fit this way.
+- **An agent:** add a case to `Agent` in `Session.swift`. The compiler then stops at every `switch` that needs it: the agent's name, its liveness, its delivery channel in `Delivery.send`, and its symbol in `RowView`. Rules shared by several agents are properties on `Agent`, such as `queuesWhileBusy` and `playsOwnSounds`.
+- **A terminal for Claude Code:** write a type that conforms to `Terminal` (read the screen and check the tty, send key chunks, open), record what it needs in `Session.setTerminal(from:)` from the shell's environment, and return it from `Session.terminal`. The safety checks in `Delivery` apply to it unchanged. A terminal must let Cue read its screen: Ghostty's AppleScript can't, so Ghostty stays on tmux.
 
 ## Adding a hook event
 

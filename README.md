@@ -17,31 +17,34 @@ A macOS menubar app for people who run many coding agents at once. Cue lists you
 | | Claude Code | Codex | Amp |
 | --- | --- | --- | --- |
 | Status from | Hooks | Hooks | Cue's Amp plugin |
-| Prompt delivery | Typed into the iTerm2 tab or tmux pane, behind safety checks | `codex queue` | The plugin appends it to the thread |
+| Prompt delivery | Typed into the iTerm2 tab, WezTerm pane, kitty window or tmux pane, behind safety checks | `codex queue` | The plugin appends it to the thread |
 | Send while the agent works | No | Yes, queued | Yes, queued |
-| Terminals | iTerm2, or any terminal through tmux | Any | Any |
-| Open button | Yes | No | Yes, in iTerm2 or tmux |
+| Terminals | iTerm2, WezTerm, kitty, or any terminal through tmux | Any | Any |
+| Open button | Yes | Yes, for the one Codex running in that folder | Yes |
 
 ## Requirements
 
-- macOS 14 or later, and iTerm2 or tmux for Claude Code
-- `jq`, and Swift 6 (the Xcode Command Line Tools are enough)
+- macOS 14 or later, and iTerm2, WezTerm, kitty (with remote control on) or tmux for Claude Code
+- `jq` (macOS 15 includes it), and Swift 6 to build from source (the Xcode Command Line Tools are enough)
 - Any of: Claude Code 2.1.285+, Codex CLI 0.160+, Amp CLI
 
 ## Install
+
+Download `cue-<version>.zip` from [Releases](https://github.com/haikelz/cue/releases), unzip it, and run `./install.sh` in that folder. The release app is built for Apple silicon. To build from source instead, run the same script in a clone:
 
 ```sh
 ./install.sh
 ```
 
-The script builds `~/Applications/Cue.app`, wires in each agent you have installed (hooks for Claude Code and Codex, a plugin for Amp), and launches the app. It backs up every settings file it touches, keeping the last three backups, and it migrates a Claude Relay install.
+The script installs `~/Applications/Cue.app`, wires in each agent you have installed (hooks for Claude Code and Codex, a plugin for Amp), and launches the app. It backs up every settings file it touches, keeping the last three backups, and it migrates a Claude Relay install.
 
 Then:
 
 - **Codex:** open `codex`, run `/hooks`, and trust Cue's hooks. Codex skips hooks you haven't trusted.
 - **Amp:** in open Amp windows, run `plugins: reload` from the command palette, or restart Amp.
 - **First start:** macOS asks whether Cue may send notifications. Click Allow. Cue also adds itself to your login items; turn that off in its gear menu.
-- **First Send to Claude Code in iTerm2:** macOS asks whether Cue may control iTerm2. Click Allow. tmux needs no permission.
+- **First Send to Claude Code in iTerm2:** macOS asks whether Cue may control iTerm2. Click Allow. tmux and WezTerm need no permission.
+- **kitty:** add `allow_remote_control socket-only` and `listen_on unix:/tmp/kitty` to `kitty.conf`, then restart kitty.
 
 ## Documentation
 

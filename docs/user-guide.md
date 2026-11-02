@@ -20,7 +20,7 @@ The popover lists one row per session: Claude Code sessions, Codex sessions, and
 2. Idle, longest wait first
 3. Working, by project name
 
-Rows keep their places while the popover stays open, so a row never moves under your cursor. Past three sessions, the list scrolls. The cursor starts in the first row you can type in, which is the session that has waited longest.
+Rows keep their places while the popover stays open, so a row never moves under your cursor. The list grows with its rows, and with an opened reply, up to the height of your screen, then scrolls. The cursor starts in the first row you can type in, which is the session that has waited longest.
 
 The header shows a count such as "2 waiting · 1 working". Each session is a rounded tile that shows:
 
@@ -29,8 +29,8 @@ The header shows a count such as "2 waiting · 1 working". Each session is a rou
 - **Last message**: the first two lines of the agent's final reply. Click it to read all of it, with line breaks, bold, code and links, and text you can select and copy. A long reply scrolls; **Show less** folds it again. One reply opens at a time.
 
   <img src="images/reply-expanded.png" width="380" alt="A Claude Code row with its reply expanded: bold text, code, a list, and a Show less link">
-- **Prompt box**: a text area four lines tall; a longer prompt scrolls inside it. A Claude Code row that needs you, or one outside iTerm2 and tmux, shows a line saying so instead, with an **Open** button.
-- **Send**, and the **Open** arrow for Claude Code and Amp rows.
+- **Prompt box**: a text area four lines tall; a longer prompt scrolls inside it. A Claude Code row that needs you, or one in a terminal Cue can't type into, shows a line saying so instead, with an **Open** button.
+- **Send**, and the **Open** arrow on rows whose terminal Cue can find.
 - **A note** under the prompt box when something needs your attention. See [Row messages](#row-messages).
 
 The footer shows whether Cue's hooks are installed, a reminder of ⌃⌥Space, and a gear menu with **Open at Login**, **Play Sounds** and **Quit Cue** (⌘Q). Cue opens at login and plays sounds unless you turn those off there.
@@ -49,7 +49,7 @@ Above the footer, an orange banner appears when Codex won't run Cue's hooks:
 ### Statuses
 
 <p align="center">
-  <img src="images/states.png" width="380" alt="Three rows: a Claude Code session that needs you, with Open; one outside iTerm2 and tmux, read only; a working Codex session with a spinner; and the orange Codex hook warning above the footer">
+  <img src="images/states.png" width="380" alt="Three rows: a Claude Code session that needs you, with Open; one in a terminal Cue can't type into, read only; a working Codex session with a spinner and Open; and the orange Codex hooks warning above the footer">
 </p>
 
 | Status | Claude Code | Codex and Amp |
@@ -57,19 +57,26 @@ Above the footer, an orange banner appears when Codex won't run Cue's hooks:
 | Idle | Send enabled | Send enabled |
 | Working | Draft ahead; Send waits for idle | Send queues the prompt behind the running turn |
 | Needs you | Answer the dialog in the terminal first | Send queues; answer the dialog in the terminal |
-| Read only | The session runs outside iTerm2 and tmux; Send disabled | Doesn't apply: delivery doesn't use the terminal |
+| Read only | The session runs where Cue can't type: Ghostty or Terminal.app without tmux, or kitty without remote control; Send disabled | Doesn't apply: delivery doesn't use the terminal |
 
-Claude Code drafts follow the iTerm2 tab or tmux pane, so a draft survives `/clear`. Codex and Amp drafts follow the session.
+Claude Code drafts follow the tab, pane or window, so a draft survives `/clear`. Codex and Amp drafts follow the session.
 
 ## Sending a prompt
 
 Type in the prompt box. It takes text exactly as typed: no smart quotes or dashes, text replacement or autocorrect, so code and flags arrive intact. **Return** adds a line break; **⌘Return** or the **Send** button sends. The row you're typing in shows the accent focus ring and a "⌘↩ to send" hint, since its Send button is the one ⌘Return triggers. Each agent takes the prompt its own way.
 
-**Claude Code.** Cue types into the session's iTerm2 tab, or into its tmux pane when Claude runs inside tmux. tmux works the same in Ghostty, Kitty, WezTerm, Terminal.app or any other terminal, and needs no macOS permission. Before typing anything, Cue checks that the session is idle, that its Claude process runs in the foreground of that tab or pane, and that Claude's input box sits on screen with no spinner above it. Then it:
+**Claude Code.** Cue types into the session's iTerm2 tab, WezTerm pane or kitty window, or into its tmux pane when Claude runs inside tmux. tmux works the same in Ghostty, Terminal.app or any other terminal. WezTerm and tmux need no setup or macOS permission. kitty needs remote control on, in `kitty.conf`, then a kitty restart:
 
-1. Clears any text already in the input box with Ctrl+U. If that text was a draft of yours, press **Ctrl+Y** in the terminal to get it back.
+```
+allow_remote_control socket-only
+listen_on unix:/tmp/kitty
+```
+
+Ghostty can't be typed into without tmux: it lets other apps type, but not read its screen, and Cue never types blind. Before typing anything, Cue checks that the session is idle, that its Claude process runs in the foreground of that tab or pane, and that Claude's input box sits on screen with no spinner above it. Then it:
+
+1. Clears any text already in the input box, however long, wherever the cursor sits. If that text was a draft of yours, press **Ctrl+Y** in the terminal to get it back.
 2. Types your prompt in small chunks, so Claude Code reads it as typed text rather than a paste.
-3. Runs every check again, confirms the box ends with your prompt, and presses Return.
+3. Runs every check again, confirms the box holds your prompt and nothing else, and presses Return.
 4. Waits up to 5 seconds for the session to report the new prompt, then clears the prompt box.
 
 A long prompt takes a moment: each 200 characters adds 150 ms.
@@ -82,7 +89,9 @@ Prompts that start with `/` (slash commands) or `!` (shell commands) behave as i
 
 ## Opening a session
 
-**Open** brings the session's iTerm2 window and tab to the front. For a session in tmux, Claude Code's or Amp's, it selects the pane in tmux and brings forward the terminal showing that tmux session: in iTerm2, the exact tab; in other terminals, the app with its front window, which may not be the one holding the pane. Use Open to answer a permission dialog. Codex rows have no Open: Codex runs hooks in a shared background process, so Cue can't tell which tab a Codex session lives in.
+**Open** brings the session's iTerm2 window and tab, WezTerm pane or kitty window to the front. In a terminal Cue can't drive, such as Ghostty or Terminal.app without tmux, Open brings that app forward, though not the exact tab. For a session in tmux, Claude Code's or Amp's, it selects the pane in tmux and brings forward the terminal showing that tmux session: in iTerm2, the exact tab; in other terminals, the app with its front window, which may not be the one holding the pane. Use Open to answer a permission dialog.
+
+Codex doesn't record which terminal shows a session, so Open on a Codex row looks for the Codex running in that row's folder and brings its tab or pane forward. With two Codex sessions in one folder, Open says so instead of guessing. A thread you resumed in a Codex started in another folder brings that other Codex forward.
 
 ## Notifications
 
@@ -161,7 +170,7 @@ Cue is ad-hoc signed, so macOS treats each rebuild as a new app and asks for Aut
 
 **⌃⌥Space does nothing.** macOS's "Select next source in Input menu" shortcut also uses ⌃⌥Space, and when it's on, macOS takes the key first. Turn that shortcut off in System Settings > Keyboard > Keyboard Shortcuts > Input Sources.
 
-**A Claude row says Read only.** Cue types only into iTerm2 tabs and tmux panes. Start Claude inside tmux in any other terminal; existing sessions pick up the pane on their next hook event.
+**A Claude row says Read only.** Cue types into iTerm2 tabs, WezTerm panes, kitty windows with remote control on, and tmux panes. In kitty, turn remote control on (see [Sending a prompt](#sending-a-prompt)) and restart kitty; in any other terminal, start Claude inside tmux. Existing sessions pick up the change on their next hook event.
 
 **No notifications from Cue.** Check System Settings > Notifications > Cue. Notifications post for changes Cue sees while it runs; a turn that ended while Cue was quit doesn't notify later.
 
@@ -177,9 +186,8 @@ Cue is ad-hoc signed, so macOS treats each rebuild as a new app and asks for Aut
 
 ## Limitations
 
-- Claude Code delivery works in iTerm2 tabs, and in tmux panes in any terminal. Other terminals without tmux are read only.
+- Claude Code delivery works in iTerm2 tabs, WezTerm panes, kitty windows with remote control on, and tmux panes in any terminal. Ghostty and Terminal.app without tmux are read only.
 - Cue's notifications and sounds need Cue running. Quit, Claude Code and Amp fall back to the terminal banner, which doesn't arrive inside tmux.
-- A multi-line draft taller than Claude's input box may not fully clear before Cue types.
 - Cue reads Claude Code's screen layout, so a Claude Code UI change can make sends refuse until Cue updates. It refuses rather than types blind. See [Development](development.md#when-an-agent-updates).
-- Codex rows have no Open, and a prompt sent to a Codex session whose terminal you closed runs in the background.
+- Open on a Codex row finds the Codex running in that row's folder, so it refuses when two share a folder. A prompt sent to a Codex session whose terminal you closed runs in the background.
 - Cue shows the Amp thread you're looking at in each Amp window; switching threads moves the row.

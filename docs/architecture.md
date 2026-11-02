@@ -4,7 +4,7 @@ Cue has no server and no socket. Each agent reports into one folder of JSON file
 
 ```mermaid
 flowchart LR
-    C["Claude Code session<br/>(iTerm2 tab or tmux pane)"] -- "hook event" --> H["cue hook claude / codex"]
+    C["Claude Code session<br/>(iTerm2, WezTerm, kitty or tmux)"] -- "hook event" --> H["cue hook claude / codex"]
     X["Codex session<br/>(via its shared daemon)"] -- "hook event" --> H
     P["Cue plugin<br/>inside Amp"] -- "thread state, heartbeat" --> F
     H -- "atomic write" --> F[("~/.cue/sessions/*.json")]
@@ -32,10 +32,10 @@ One binary does all of it. `main.swift` picks the mode before AppKit loads, whic
 | --- | --- | --- | --- |
 | Reports through | Hooks in `~/.claude/settings.json` | Hooks in `~/.codex/hooks.json` | `~/.config/amp/plugins/cue.ts` |
 | Hooks run in | The session's `claude` process | Codex's shared app-server daemon | (plugin, inside the Amp process) |
-| Delivery | Typed into the iTerm2 tab or tmux pane | `codex queue` | Inbox file, appended by the plugin |
+| Delivery | Typed into the iTerm2 tab, WezTerm pane, kitty window or tmux pane | `codex queue` | Inbox file, appended by the plugin |
 | Confirmation | `last_prompt_at` within 5 s | `codex queue` exit 0: "Sent", or "Queued" during a turn | A receipt from the plugin |
 | Liveness | PID and start time | `SessionEnd`, a newer session in the same folder, or 24 h without change | Heartbeat younger than 30 s; the file goes after an hour |
-| Open | The iTerm2 tab, or the tmux pane and its terminal app | No; the tab is unknown | The iTerm2 tab, or the tmux pane, from the plugin's environment |
+| Open | The iTerm2 tab, WezTerm pane or kitty window, or the tmux pane and its terminal app; elsewhere, the app above the Claude process | The Codex process in the row's folder, found when clicked | The same, from the plugin's environment and the Amp process |
 
 ## Session tracking
 
@@ -86,7 +86,7 @@ stateDiagram-v2
 
 - It follows the thread's state and writes the session file: `running` to working, `awaiting-approval` to needs_you, `idle` to idle, `error` to idle with "Error".
 - On `agent.end`, it stores the last assistant text and stamps `finished_at` (unless the turn was cancelled). While the Cue app isn't posting notifications, it also writes the fallback banner as OSC 9 to the tty of the Amp process above it, looked up on first attach and written without blocking, so a paused terminal can't stall it.
-- It records the Amp process id, `ITERM_SESSION_ID` and `PWD` from its environment, and rewrites a `heartbeat` every 5 seconds. The app hides the row after 30 seconds of silence, refuses a send after 15, and deletes the file after an hour, so it never races a plugin that resumes.
+- It records the Amp process id, `PWD`, and its terminal, read from its environment with the Claude hook's order (`terminal()` in the plugin), and rewrites a `heartbeat` every 5 seconds. The app hides the row after 30 seconds of silence, refuses a send after 15, and deletes the file after an hour, so it never races a plugin that resumes.
 - Every second, it drains its own thread's inbox (below). When it stops, it deletes its session file, provided the file still names its Amp process: a second window on the same thread keeps the row.
 
 ### The session file
@@ -104,20 +104,22 @@ stateDiagram-v2
 | `finished_at` | `Stop`, `StopFailure`, or `agent.end` unless cancelled | "Finished" notifications; Esc and interrupts don't set it |
 | `updated_at` | Each status change | Badge time, recovery checks |
 | `pid`, `pid_start` | Claude: the `claude` process above the hook; Amp: the Amp process | Liveness; the start time guards against PID reuse |
-| `tty` | Claude's controlling terminal | Matches the iTerm2 tab or tmux pane before typing |
-| `iterm_session_id` | `ITERM_SESSION_ID`, dropped when `TMUX` is set | The tab to type into, and Open |
+| `tty` | Claude's controlling terminal | Matches the tab, pane or window before typing |
+| `iterm_session_id` | `ITERM_SESSION_ID`, dropped when another terminal's variables come first | The tab to type into, and Open |
 | `tmux_socket`, `tmux_pane` | Claude or Amp inside tmux: the socket part of `$TMUX`, and `$TMUX_PANE` | The pane to type into (Claude), and Open |
+| `wezterm_socket`, `wezterm_pane` | Claude or Amp in WezTerm: `$WEZTERM_UNIX_SOCKET` and `$WEZTERM_PANE` | The pane to type into, and Open |
+| `kitty_socket`, `kitty_window` | Claude or Amp in kitty: `$KITTY_LISTEN_ON` (a `unix:` address only) and `$KITTY_WINDOW_ID` | The window to type into, and Open; no socket leaves the row read only |
 | `transcript_path` | Hook input | Claude interrupt detection, Codex originator and activity |
 | `turn_id` | Codex `UserPromptSubmit` | Filters Codex subagent events |
 | `heartbeat` | Amp plugin | Amp liveness |
 
-Times are Unix seconds. Claude rows key drafts by iTerm2 tab or tmux pane, so a draft survives `/clear`. Codex and Amp rows key by session id, since several of their threads can share a tab.
+Times are Unix seconds. Claude rows key drafts by tab, pane or window, so a draft survives `/clear`. Codex and Amp rows key by session id, since several of their threads can share a tab.
 
 ### Recovery without a hook event (Claude Code)
 
 Claude Code fires no hook when you press Esc or deny a permission. The app covers both:
 
-- **Interrupt marker.** When a Claude row isn't idle and the transcript's last message entry is `[Request interrupted by user…]`, written after the row's last update, the app sets the row idle. Claude Code appends metadata entries after the marker, so the app reads the last `user` or `assistant` entry, not the last line.
+- **Interrupt marker.** When a Claude row isn't idle and the transcript's last message entry is `[Request interrupted by user…]`, written after the row's last update, the app sets the row idle. Claude Code appends metadata entries after the marker, so the app reads the last `user` or `assistant` entry, not the last line. Claude Code 2.1.285 wrote no transcript at all for sessions in WezTerm or kitty in our tests, so there only the idle-screen check below catches an Esc.
 - **Screen probe.** Esc pressed before Claude writes anything puts the prompt back in the input box and leaves no marker. When the popover opens, the app probes each Claude row that has stayed at `working` for 15 seconds. An idle input box with no spinner sets it idle.
 
 Codex reports Esc through its `Interrupt` hook, and Amp through its thread state, so neither needs recovery.
@@ -126,24 +128,26 @@ Codex reports Esc through its `Interrupt` hook, and Amp through its thread state
 
 ### Claude Code: typing into the terminal
 
-`Delivery.typeIntoClaude` turns a prompt into keystrokes for the session's iTerm2 tab, or for its tmux pane when Claude runs inside tmux. Each step can refuse, and nothing reaches the terminal until the checks pass.
+`Delivery.typeIntoClaude` turns a prompt into keystrokes for the session's terminal: the tmux pane when Claude runs inside tmux, else its WezTerm pane, kitty window or iTerm2 tab. The hook reads which from its environment, innermost terminal first, since a terminal started from another's shell inherits that one's variables (`TMUX`, then `KITTY_WINDOW_ID` with `TERM=xterm-kitty`, then `TERM_PROGRAM=WezTerm` with `WEZTERM_PANE` and `WEZTERM_UNIX_SOCKET`, then `KITTY_WINDOW_ID` alone, then `ITERM_SESSION_ID` with `TERM_PROGRAM=iTerm.app`; kitty sets no `TERM_PROGRAM`, and VS Code's terminal opened from an iTerm2 shell keeps `ITERM_SESSION_ID`). Each step can refuse, and nothing reaches the terminal until the checks pass.
 
 1. **Sanitize.** Strip C0 and C1 control characters (line breaks stay), DEL, zero-width, bidi, tag and variation-selector characters. Turn tabs into spaces, since Tab completes in Claude Code. Add a space after a trailing `\`, since `\` then Return inserts a line break.
 2. **Process checks.** Re-read the session file: it must say `idle`. The PID must run with the recorded start time, as its terminal's foreground process group, not stopped. Its tty must match the recorded one.
-3. **Screen checks.** Read the tab's tty and visible text with AppleScript, or the pane's with `tmux display-message` and `tmux capture-pane`. The tty must match. Claude's input box must be on screen: a rule line of `─`, a line starting with `❯` (or `!` in shell mode) in column 0, more input lines, a rule line. No spinner may sit in the six lines above the box, and vim mode must not be in NORMAL.
-4. **Clear the box.** If the box holds text, send Ctrl+U once per box line. A draft stays recoverable with Ctrl+Y; a grayed-out suggestion vanishes.
+3. **Screen checks.** Read the tab's tty and visible text with AppleScript, the tmux pane's with `tmux display-message` and `tmux capture-pane`, the WezTerm pane's with `wezterm cli list` and `get-text`, or the kitty window's with `kitten @ ls` (its shell's tty) and `get-text`. The tty must match. Claude's input box must be on screen: a rule line of `─`, a line starting with `❯` (or `!` in shell mode) in column 0, more input lines, a rule line. No spinner may sit in the six lines above the box, and vim mode must not be in NORMAL.
+4. **Clear the box.** If the box holds anything but `❯` or an empty box's `Try "…"` suggestion, send 60 Ctrl+K in one write and 60 Ctrl+U in another: each takes one line's text or one line break, after and before the cursor. The box shows only a draft's last 17 lines, so re-run steps 2 and 3 and clear again until the box reads empty, up to 10 rounds; a one-line box that stays the same through the round and a second read 300 ms later is a grayed-out suggestion. A taller box keeps clearing, since it may show the same last lines while text above the cursor goes. Claude Code honors a burst of one key and dropped a 60-byte mix of both. A draft stays recoverable with Ctrl+Y.
 5. **Type.** Send the prompt in 200-character chunks, 150 ms apart, with each line break as ESC + CR (Option+Return). No Return yet. tmux gets the same bytes through `send-keys -H`; a text argument ending in `;` would parse as a tmux command separator.
-6. **Check again.** Repeat steps 2 and 3, then confirm the box's last line is the end of the prompt.
+6. **Check again.** Repeat steps 2 and 3, then confirm the box shows the end of the prompt and nothing else, whitespace aside (a long prompt scrolls, so its start may be out of view), behind a `❯` marker, or `!` for a prompt that starts with `!`.
 7. **Return.** Press Return in a separate call that re-checks the tty.
 8. **Confirm.** The app waits for `last_prompt_at` at or after the send start, with a 5-second deadline that starts once typing ends. Prompts starting with `/` or `!` skip this step.
 
-A refusal before step 5 leaves the terminal untouched. A failure from step 5 on copies the prompt to the clipboard and says so on the row. The column-0 rule matters: dialog options such as ` ❯ 1. Yes` are indented, so a dialog can't pass for the input box.
+A refusal never sends the prompt. One that comes after step 4 cleared a draft says that Ctrl+Y brings it back. A failure from step 5 on copies the prompt to the clipboard and says so on the row. The column-0 rule matters: dialog options such as ` ❯ 1. Yes` are indented, so a dialog can't pass for the input box.
 
-tmux runs the same steps with the tmux CLI, so Ghostty, Kitty, WezTerm and Terminal.app all work, and no macOS permission is involved. Two tmux states refuse before every step: copy mode, where tmux reads keys as its own commands while `capture-pane` still shows Claude's screen, and `synchronize-panes`, where tmux copies keys into every pane of the window. The app uses the `tmux` path from `~/.cue/config.json`, then `/opt/homebrew/bin` and `/usr/local/bin`. Open selects the pane's window and pane, then walks up from the tmux client you used last to the terminal app that hosts it and activates that app. iTerm2 runs shells under its `iTermServer` helper, whose parent is launchd, so meeting that helper means iTerm2.
+tmux runs the same steps with the tmux CLI, so Ghostty and Terminal.app work through it, and no macOS permission is involved. WezTerm's `wezterm cli` needs none either; text goes with `--no-paste`, since a bracketed paste would read as pasted data. kitty's `kitten @` needs `allow_remote_control` and `listen_on` in `kitty.conf`; text goes on stdin, which kitty sends as is, since it reads escapes such as `\r` in an argument. Ghostty's AppleScript can type and focus but can't read the screen or name a tty, so Ghostty stays on tmux. Two tmux states refuse before every step: copy mode, where tmux reads keys as its own commands while `capture-pane` still shows Claude's screen, and `synchronize-panes`, where tmux copies keys into every pane of the window. The app uses the `tmux` path from `~/.cue/config.json`, then `/opt/homebrew/bin` and `/usr/local/bin`. Open selects the pane's window and pane, then walks up from the tmux client you used last to the terminal app that hosts it and activates that app. iTerm2 runs shells under its `iTermServer` helper, whose parent is launchd, so meeting that helper means iTerm2.
 
 ### Codex: `codex queue`
 
 `Codex.queue` runs the absolute `codex` path saved in `~/.cue/config.json` as `codex queue --thread=<id> --message=<prompt>`. The `=` forms keep a prompt that starts with `-` from parsing as a flag. Cue passes the PATH that install.sh captured, because `codex queue` may start Codex's daemon, and the daemon runs your other Codex hooks with that PATH. Exit 0 means Codex accepted the prompt, so the row shows "Sent", or "Queued" during a turn. Cue doesn't also wait for `UserPromptSubmit`: that could only turn a slow start into "Not confirmed" and a duplicate send.
+
+Open has nothing recorded to go on, since the hooks run in the daemon. `Codex.open` lists this user's processes named `codex` that hold a tty as their terminal's foreground group (the daemons hold none) and picks the one started with the session's id (`codex resume <id>`; the kernel's name for it starts with `codex`), else the one whose working folder is the row's, both paths resolved. Two ttys in one folder refuse. It reads that process's launch environment (`KERN_PROCARGS2`) with the same detection as the Claude hook and opens its tmux pane, WezTerm pane or kitty window; for iTerm2 it selects the tab by the process's tty, which an inherited `ITERM_SESSION_ID` can't fool, and otherwise activates the app above the process.
 
 ### Amp: the inbox, at most once
 
@@ -196,7 +200,7 @@ Cue registers itself as a login item through `SMAppService` on its first launch.
 
 ## The menubar app
 
-An `NSStatusItem` with an `NSPopover` holds the UI; SwiftUI's `MenuBarExtra` can't open from code, which the hotkey needs. ⌃⌥Space comes from Carbon's `RegisterEventHotKey`, which needs no Accessibility permission. Each time the popover opens, the app re-sorts the rows and puts the cursor in the first row you can type in. Only the row being edited owns ⌘Return, and one reply expands at a time.
+An `NSStatusItem` with an `NSPopover` holds the UI; SwiftUI's `MenuBarExtra` can't open from code, which the hotkey needs. ⌃⌥Space comes from Carbon's `RegisterEventHotKey`, which needs no Accessibility permission. Each time the popover opens, the app re-sorts the rows and puts the cursor in the first row you can type in. The row list takes its measured height, capped at the screen's visible height less 180 points, and scrolls past that. Only the row being edited owns ⌘Return, and one reply expands at a time.
 
 ## Code structure
 
