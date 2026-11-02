@@ -12,7 +12,6 @@ import Testing
 
     @Test func agentRules() {
         #expect(!Agent.claude.queuesWhileBusy && Agent.codex.queuesWhileBusy && Agent.amp.queuesWhileBusy)
-        #expect(Agent.claude.canOpen && !Agent.codex.canOpen && Agent.amp.canOpen)
         #expect([Agent.claude, .codex, .amp].map(\.name) == ["Claude", "Codex", "Amp"])
     }
 
@@ -47,9 +46,20 @@ import Testing
         var s = session(.claude)
         s.tty = "/dev/ttys001"
         s.setTerminal(from: ["KITTY_WINDOW_ID": "2"])
-        #expect(!s.deliverable)
+        #expect(!s.deliverable && !s.openable)
         s.setTerminal(from: ["KITTY_WINDOW_ID": "2", "KITTY_LISTEN_ON": "unix:/tmp/kitty-77"])
-        #expect(s.deliverable)
+        #expect(s.deliverable && s.openable)
+        #expect(session(.codex).openable)  // looked up when clicked
+    }
+
+    @Test func procReadsThisProcess() throws {
+        let me = try #require(Proc(getpid()))
+        #expect(Proc.all().contains { $0.pid == getpid() })
+        let here = try #require(realpath(FileManager.default.currentDirectoryPath, nil))
+        defer { free(here) }
+        #expect(me.cwd == String(cString: here))
+        #expect(me.launch.args == ProcessInfo.processInfo.arguments)
+        #expect(me.launch.env["PATH"] == ProcessInfo.processInfo.environment["PATH"])
     }
 
     @Test func statusOrderPutsNeedsYouFirst() {

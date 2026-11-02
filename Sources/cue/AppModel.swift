@@ -102,7 +102,7 @@ final class AppModel {
             let result = await worker.run { Result { () throws(DeliveryError) in try Delivery.open(s) } }
             switch result {
             case .success(let apps):
-                rowStates[key, default: RowState()].note = Self.activate(apps) ? nil : "Couldn't find the terminal app showing this tmux session"
+                rowStates[key, default: RowState()].note = Self.activate(apps) ? nil : "Couldn't find the terminal app showing this session"
             case .failure(let error):
                 rowStates[key, default: RowState()].note = error.message
             }

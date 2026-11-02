@@ -216,8 +216,13 @@ package enum Delivery {
 
     /// Selects the session's tab or pane; see `Terminal.open`.
     package static func open(_ s: Session) throws(DeliveryError) -> [AppRef] {
-        guard let terminal = s.terminal else { throw .refused(Delivery.noTerminal) }
-        return try terminal.open()
+        switch s.agent {
+        case .claude, .amp:
+            guard let terminal = s.terminal else { throw .refused(Delivery.noTerminal) }
+            return try terminal.open()
+        case .codex:
+            return try Codex.open(s)
+        }
     }
 }
 

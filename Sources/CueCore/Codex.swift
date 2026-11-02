@@ -113,3 +113,34 @@ package enum Codex {
         return originator == "codex-tui"
     }
 }
+
+extension Codex {
+    /// Codex runs every thread in its shared daemon and records no terminal for one, so Open looks for
+    /// the Codex showing this session: one started with its id (`codex resume <id>`), else the one in
+    /// its folder. That process's environment names its tmux pane, WezTerm pane or kitty window, read
+    /// the way the Claude hook reads its own; an iTerm2 tab is found by tty, which an inherited
+    /// ITERM_SESSION_ID can't fool. Two Codex sessions in one folder can't be told apart, so Open
+    /// refuses there. A thread resumed in another folder's Codex can bring that one forward.
+    static func open(_ s: Session) throws(DeliveryError) -> [AppRef] {
+        // The daemons have no tty. The kernel names a process after its binary, cut to 16 characters.
+        let tuis = Proc.all().filter { $0.name.hasPrefix("codex") && $0.tty != nil && $0.tpgid == $0.pgid }
+        let named = tuis.filter { $0.launch.args.contains(s.sessionId) }
+        let folder = resolved(s.cwd)
+        let here = named.isEmpty ? tuis.filter { $0.cwd.map(resolved) == folder } : named
+        let ttys = Set(here.compactMap(\.tty))
+        guard ttys.count == 1, let tui = here.first, let tty = tui.tty else {
+            throw .refused(ttys.isEmpty ? "No Codex is running in \(s.project)" : "\(ttys.count) Codex sessions run in \(s.project); Open can't tell them apart")
+        }
+        var found = s
+        found.setTerminal(from: tui.launch.env)
+        if found.itermSessionId == nil, let terminal = found.terminal { return try terminal.open() }
+        guard let apps = apps(above: tui.pid, tty: tty) else { throw .closed("Codex has quit") }
+        return apps
+    }
+
+    private static func resolved(_ path: String) -> String {
+        guard let real = realpath(path, nil) else { return path }
+        defer { free(real) }
+        return String(cString: real)
+    }
+}

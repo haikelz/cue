@@ -65,7 +65,7 @@ struct RowView: View {
         .animation(.easeOut(duration: 0.15), value: hovering)
     }
 
-    private var canOpen: Bool { session.agent.canOpen && (session.itermSessionId != nil || session.tmuxPane != nil) }
+    private var canOpen: Bool { session.openable }
 
     private func placeholder(_ target: Bool) -> String {
         if !target {

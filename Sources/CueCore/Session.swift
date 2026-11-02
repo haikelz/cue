@@ -21,14 +21,6 @@ package enum Agent: String, Codable, Sendable {
         }
     }
 
-    /// Codex hooks run in its shared daemon, so a Codex session's terminal is unknown.
-    package var canOpen: Bool {
-        switch self {
-        case .claude, .amp: true
-        case .codex: false
-        }
-    }
-
     /// How much of the session id tells two rows of one agent in one folder apart.
     package var idPrefix: Int {
         switch self {

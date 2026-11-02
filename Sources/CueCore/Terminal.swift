@@ -72,6 +72,30 @@ extension Session {
     private func kittyListen(_ env: [String: String]) -> String? {
         env["KITTY_LISTEN_ON"].flatMap { $0.hasPrefix("unix:/") ? $0 : nil }
     }
+
+    /// Whether Open has somewhere to go. Codex records no terminal; Open looks for it when clicked.
+    package var openable: Bool {
+        switch agent {
+        case .claude, .amp: terminal != nil
+        case .codex: true
+        }
+    }
+}
+
+/// The apps that may show the terminal of process `pid`, nearest first, for the app to activate; nil
+/// when the process is gone. iTerm2 runs shells under its iTermServer helper, whose parent is launchd
+/// rather than iTerm2: its AppleScript selects the tab by `tty` instead (an empty list: done), and
+/// failing that, iTerm2 comes forward.
+func apps(above pid: pid_t, tty: String) -> [AppRef]? {
+    var pid = pid
+    var apps: [AppRef] = []
+    for _ in 0..<12 {
+        guard let p = Proc(pid) else { break }
+        if p.name.hasPrefix("iTermServer") { return ITermTab.select(tty: tty) ? [] : apps + [.bundle("com.googlecode.iterm2")] }
+        apps.append(.pid(pid))
+        pid = p.ppid
+    }
+    return apps.isEmpty ? nil : apps
 }
 
 /// The first of `paths` that runs: an app's own copy before Homebrew's.
@@ -211,18 +235,8 @@ struct TmuxPane: Terminal {
             return (at, pid, String(f[2]))
         }.max { $0.at < $1.at }
         guard let latest else { throw .failed("No terminal shows this tmux session; run tmux attach") }
-        var pid = latest.pid
-        var apps: [AppRef] = []
-        for _ in 0..<12 {
-            guard let p = Proc(pid) else { break }
-            // iTerm2 runs shells under its iTermServer helper, whose parent is launchd rather than iTerm2.
-            // Its AppleScript can find the tab by the client's tty; failing that, iTerm2 comes forward.
-            if p.name.hasPrefix("iTermServer") { return ITermTab.select(tty: latest.tty) ? [] : apps + [.bundle("com.googlecode.iterm2")] }
-            apps.append(.pid(pid))
-            pid = p.ppid
-        }
-        // The client just exited (its window closed), so no process is left to bring forward.
-        guard !apps.isEmpty else { throw .failed("Couldn't find the terminal app showing this tmux session") }
+        // The client just exited (its window closed) when no process is left to bring forward.
+        guard let apps = apps(above: latest.pid, tty: latest.tty) else { throw .failed("Couldn't find the terminal app showing this tmux session") }
         return apps
     }
 

@@ -312,6 +312,10 @@ if grep -q "Cue.app/Contents/MacOS/cue' hook codex" ~/.codex/hooks.json 2> /dev/
     C=$(codex_row)
     check "Codex session registered" "$([[ -n $C ]] && print yes)" yes
     if [[ -n $C ]]; then
+      # Open finds the one Codex in this folder and selects its iTerm2 tab by tty.
+      sidF=$($T new); sleep 1
+      check "Open selects the Codex tab" "$($BIN open $C 2>&1) $(osascript -e 'tell application "iTerm2" to id of current session of current window')" "opened $sidC"
+      $T close $sidF > /dev/null; sleep 0.5
       wait_for 60 '[[ $(field $C last_message) == READY ]]'
       check "Codex reply stored" "$(field $C last_message)" READY
       check "Codex send accepted" "$($BIN send $C 'Reply with the single word CODEXED and nothing else')" sent
