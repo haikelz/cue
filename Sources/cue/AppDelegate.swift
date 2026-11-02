@@ -32,6 +32,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Prompts carry code as often as prose, so the prompt box takes text as typed: no smart quotes
+        // ("x" → “x”), smart dashes (--flag → —flag), text replacement, autocorrect or auto-capitals.
+        // Cue's own defaults outrank the system-wide setting, and text views read them when created.
+        for key in ["NSAutomaticQuoteSubstitutionEnabled", "NSAutomaticDashSubstitutionEnabled", "NSAutomaticTextReplacementEnabled",
+                    "NSAutomaticSpellingCorrectionEnabled", "NSAutomaticPeriodSubstitutionEnabled", "NSAutomaticCapitalizationEnabled"] {
+            UserDefaults.standard.set(false, forKey: key)
+        }
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         // Cue's mark from the bundle, drawn as a template so it follows the menubar's light or dark look.
         // A build run from .build/ has no bundle resources and shows the SF Symbol instead.
