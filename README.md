@@ -62,4 +62,6 @@ Then:
 
 The script removes Cue's hooks and plugin, keeps every other hook, takes Cue out of your login items, and deletes the app. Session files stay in `~/.cue` until you delete them.
 
-The Claude, Codex and Amp logos are trademarks of Anthropic, OpenAI and Amp. Cue shows them only to mark which agent a session belongs to.
+## License
+
+Cue is released under the [MIT License](LICENSE). The Claude, Codex and Amp logos are trademarks of Anthropic, OpenAI and Amp and aren't covered by it; Cue shows them only to mark which agent a session belongs to.
