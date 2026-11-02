@@ -218,8 +218,12 @@ package enum Delivery {
     package static func open(_ s: Session) throws(DeliveryError) -> [AppRef] {
         switch s.agent {
         case .claude, .amp:
-            guard let terminal = s.terminal else { throw .refused(Delivery.noTerminal) }
-            return try terminal.open()
+            if let terminal = s.terminal { return try terminal.open() }
+            // A terminal Cue can't drive, such as Ghostty: the app above the session's process shows it,
+            // though not which tab. The start time, when known, guards against a reused pid.
+            guard let pid = s.pid, let p = Proc(pid), s.pidStart.map({ abs(p.start - $0) < 0.01 }) ?? true,
+                  let apps = apps(above: pid, tty: s.tty ?? "") else { throw .closed("\(s.agent.name) has quit") }
+            return apps
         case .codex:
             return try Codex.open(s)
         }

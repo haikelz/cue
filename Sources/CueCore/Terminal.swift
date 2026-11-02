@@ -73,10 +73,11 @@ extension Session {
         env["KITTY_LISTEN_ON"].flatMap { $0.hasPrefix("unix:/") ? $0 : nil }
     }
 
-    /// Whether Open has somewhere to go. Codex records no terminal; Open looks for it when clicked.
+    /// Whether Open has somewhere to go: the terminal, else the app above the session's process (Ghostty,
+    /// Terminal.app). Codex records neither; Open looks for it when clicked.
     package var openable: Bool {
         switch agent {
-        case .claude, .amp: terminal != nil
+        case .claude, .amp: terminal != nil || pid != nil
         case .codex: true
         }
     }

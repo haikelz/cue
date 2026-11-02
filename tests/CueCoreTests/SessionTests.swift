@@ -47,6 +47,9 @@ import Testing
         s.tty = "/dev/ttys001"
         s.setTerminal(from: ["KITTY_WINDOW_ID": "2"])
         #expect(!s.deliverable && !s.openable)
+        s.pid = getpid()  // Open still finds the app above the process
+        #expect(!s.deliverable && s.openable)
+        s.pid = nil
         s.setTerminal(from: ["KITTY_WINDOW_ID": "2", "KITTY_LISTEN_ON": "unix:/tmp/kitty-77"])
         #expect(s.deliverable && s.openable)
         #expect(session(.codex).openable)  // looked up when clicked
