@@ -4,7 +4,7 @@ package enum Outcome: Sendable {
     case sent(at: Double)  // the turn should start; `last_prompt_at` confirms it
     case accepted(String)  // the agent took the prompt itself; the note says "Sent" or "Queued"
     case inbox(String)     // Amp: dropped in the inbox under this id; a receipt confirms it
-    case refused(String)   // a check failed before anything was sent
+    case refused(String)   // a check failed and the prompt never went out (a draft may have been cleared)
     case failed(String)    // sending may have started; treat the prompt as at risk
 }
 
@@ -40,15 +40,35 @@ package enum Delivery {
     static func typeIntoClaude(_ s: Session, _ text: String, on terminal: (any Terminal)? = nil,
                                gate: (Session) -> String? = liveGate, keep: (String) -> Void = keepUnreadable) -> Outcome {
         guard let terminal = terminal ?? s.terminal, let tty = s.tty else { return .refused("Not in iTerm2 or tmux") }
-        let lines: [String]
+        var lines: [String]
         do { lines = try check(s, on: terminal, tty: tty, gate: gate, keep: keep) } catch { return .refused(error.message) }
 
-        // A draft or a grayed-out suggestion sits in the box: Ctrl+U clears it, once per box line.
-        // A real draft stays recoverable with Ctrl+Y in that tab.
-        let clears = lines.first.map { $0 == "❯" || $0.hasPrefix("❯ Try \"") } == true ? 0 : lines.count
+        // Clear what sits in the box: a draft, a bash-mode "!", a grayed-out suggestion. Each Ctrl+K or
+        // Ctrl+U takes one line's text or one line break, after or before the cursor, and the box shows
+        // only a draft's last lines, so clear in rounds until it reads empty. A round that changes nothing
+        // met a suggestion, not text. An empty box's "Try" suggestion is left alone: the check before
+        // Return catches a draft that only looks like one. Ctrl+Y in that tab brings a draft back.
+        var rounds = 0
+        while lines != ["❯"], !(lines.count == 1 && lines[0].hasPrefix("❯ Try \"")) {
+            guard rounds < 10 else { return .refused("Couldn't clear the draft in Claude's input box. Ctrl+Y there brings back what was cleared") }
+            rounds += 1
+            do {
+                try terminal.send([Key.clearAfter, Key.clearBefore], tty: tty)
+                var after = try check(s, on: terminal, tty: tty, gate: gate, keep: keep)
+                if after == lines, lines.count == 1 {  // a suggestion is one line; a late redraw gets 300 ms more
+                    usleep(300_000)
+                    after = try check(s, on: terminal, tty: tty, gate: gate, keep: keep)
+                    if after == lines { break }
+                }
+                lines = after
+            } catch {
+                return .refused("\(error.message). Ctrl+Y there brings back what was cleared")  // the prompt hasn't gone out
+            }
+        }
+
         let at = Date().timeIntervalSince1970
         do {
-            try terminal.send(Array(repeating: Key.clearLine, count: clears) + keys(text), tty: tty)
+            try terminal.send(keys(text), tty: tty)
         } catch {
             switch error {
             case .moved, .refused: return .refused(error.message)  // nothing went out
@@ -57,10 +77,10 @@ package enum Delivery {
         }
 
         // Typing a long prompt takes seconds. Before Return, check everything again, and check the box
-        // ends with this prompt (a long draft scrolls inside the box, so its start may be out of view).
+        // holds this prompt and nothing else (a long prompt scrolls inside the box, so its start may be out of view).
         do {
-            guard box(try check(s, on: terminal, tty: tty, gate: gate, keep: keep), endsWith: text) else {
-                return .failed("Typed but not sent: the input box doesn't end with this prompt")
+            guard box(try check(s, on: terminal, tty: tty, gate: gate, keep: keep), holdsEndOf: text) else {
+                return .failed("Typed but not sent: the input box holds more than this prompt")
             }
         } catch {
             return .failed("Typed but not sent: \(error.message). The text is in Claude's input box")
@@ -136,13 +156,14 @@ package enum Delivery {
         return nil
     }
 
-    /// True when the box's last line is the end of the prompt's last line (wrapping keeps that a suffix).
-    static func box(_ lines: [String], endsWith text: String) -> Bool {
-        let tail = String(text.split(separator: "\n", omittingEmptySubsequences: false).last ?? "").trimmingCharacters(in: .whitespaces)
-        var last = lines.last ?? ""
-        if lines.count == 1 { last = String(last.dropFirst()) }  // the "❯" or "!" marker
-        last = last.trimmingCharacters(in: .whitespaces)
-        return !last.isEmpty && tail.hasSuffix(last)
+    /// True when the box shows the prompt's end and nothing else. Whitespace doesn't count, since the
+    /// box wraps and indents lines; a box too short for the prompt shows only its last characters, and a
+    /// leftover draft adds text the prompt doesn't end with. The marker must be "❯", or "!" for a shell
+    /// command: an empty bash-mode box would run the prompt in the shell.
+    static func box(_ lines: [String], holdsEndOf text: String) -> Bool {
+        guard let first = lines.first, first.hasPrefix("❯") || (first.hasPrefix("!") && text.hasPrefix("!")) else { return false }
+        let shown = lines.joined().dropFirst().filter { !$0.isWhitespace }
+        return !shown.isEmpty && text.filter { !$0.isWhitespace }.hasSuffix(shown)
     }
 
     /// The working spinner line: "✻ Propagating… (4s · ↓ 263 tokens)". A finished turn reads "✻ Cooked for 2s".

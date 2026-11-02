@@ -48,16 +48,17 @@ import Testing
 
     @Test func scrolledBoxEndsWithThePrompt() {
         let box = ["❯ padding words padding words", "padding words", "Line four.", "Line five: reply with the number of lines."]
-        #expect(Delivery.box(box, endsWith: "Line one.\nLine two: padding words padding words padding words\nLine four.\nLine five: reply with the number of lines."))
+        #expect(Delivery.box(box, holdsEndOf: "Line one.\nLine two: padding words padding words padding words\nLine four.\nLine five: reply with the number of lines."))
     }
 
     @Test func oneLineBoxEndsWithThePrompt() {
-        #expect(Delivery.box(["❯ Reply with PONG"], endsWith: "Reply with PONG"))
+        #expect(Delivery.box(["❯ Reply with PONG"], holdsEndOf: "Reply with PONG"))
     }
 
     @Test func boxHoldingOtherTextIsRejected() {
-        #expect(!Delivery.box(["❯ half typed draft"], endsWith: "Reply with PONG"))
-        #expect(!Delivery.box(["❯"], endsWith: "Reply with PONG"))
+        #expect(!Delivery.box(["❯ half typed draft"], holdsEndOf: "Reply with PONG"))
+        #expect(!Delivery.box(["❯"], holdsEndOf: "Reply with PONG"))
+        #expect(!Delivery.box(["❯ old draft", "", "Reply with PONG"], holdsEndOf: "Reply with PONG"))  // a draft left above
     }
 
     @Test func spinnerLines() {

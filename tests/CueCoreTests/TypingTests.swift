@@ -44,9 +44,51 @@ import Testing
     }
 
     @Test func clearsTheDraftTypesThenPressesReturn() {
-        let t = FakeTerminal([Self.screen("❯ old draft"), Self.screen("❯ hello")])
+        let t = FakeTerminal([Self.screen("❯ old draft"), Self.screen("❯ "), Self.screen("❯ hello")])
         #expect(type("hello", on: t) == "sent")
-        #expect(t.sent == [[Key.clearLine] + Delivery.keys("hello"), [Key.submit]])
+        #expect(t.sent == [[Key.clearAfter, Key.clearBefore], Delivery.keys("hello"), [Key.submit]])
+    }
+
+    @Test func aDraftTallerThanTheBoxClearsInRounds() {
+        let t = FakeTerminal([Self.screen("❯ draft line 30"), Self.screen("❯ draft line 1"), Self.screen("❯ "), Self.screen("❯ hello")])
+        #expect(type("hello", on: t) == "sent")
+        #expect(t.sent.count == 4)  // two rounds, the prompt, Return
+    }
+
+    @Test func aRoundThatChangesNothingMetASuggestion() {
+        let t = FakeTerminal([Self.screen("❯ run the tests"), Self.screen("❯ run the tests"), Self.screen("❯ run the tests"), Self.screen("❯ hello")])
+        #expect(type("hello", on: t) == "sent")
+        #expect(t.sent == [[Key.clearAfter, Key.clearBefore], Delivery.keys("hello"), [Key.submit]])
+    }
+
+    @Test func aTallDraftThatLooksUnchangedKeepsClearing() {
+        let tail = Self.screen("❯ draft line 47\n  draft line 48")  // the box may show the same last lines
+        let t = FakeTerminal([tail, tail, Self.screen("❯ "), Self.screen("❯ hello")])
+        #expect(type("hello", on: t) == "sent")
+        #expect(t.sent.count == 4)  // two rounds, the prompt, Return
+    }
+
+    @Test func aDraftThatWontClearIsRefusedBeforeTyping() {
+        let t = FakeTerminal((0...11).map { Self.screen("❯ draft \($0)") })
+        #expect(type("hello", on: t) == "refused: Couldn't clear the draft in Claude's input box. Ctrl+Y there brings back what was cleared")
+        #expect(t.sent.count == 10 && !t.sent.contains(Delivery.keys("hello")))
+    }
+
+    @Test func anErrorWhileClearingRefusesBeforeTyping() {
+        let t = FakeTerminal([Self.screen("❯ old draft")], sendErrors: [.closed("tmux pane is closed")])
+        #expect(type("hello", on: t) == "refused: tmux pane is closed. Ctrl+Y there brings back what was cleared")
+        #expect(t.sent.count == 1)
+    }
+
+    @Test func aDraftThatLooksLikeASuggestionHoldsBackReturn() {
+        let t = FakeTerminal([Self.screen("❯ Try \"x\""), Self.screen("❯ Try \"x\"\n  hello")])
+        #expect(type("hello", on: t) == "failed: Typed but not sent: the input box holds more than this prompt")
+        #expect(t.sent.count == 1)
+    }
+
+    @Test func bashModeTakesOnlyShellCommands() {
+        #expect(type("hello", on: FakeTerminal([Self.screen("❯ "), Self.screen("! hello")])) == "failed: Typed but not sent: the input box holds more than this prompt")
+        #expect(type("!ls -la", on: FakeTerminal([Self.screen("❯ "), Self.screen("! ls -la")])) == "sent")
     }
 
     @Test func anEmptyBoxOrASuggestionNeedsNoClearing() {
@@ -90,7 +132,7 @@ import Testing
 
     @Test func aBoxNotEndingWithThePromptHoldsBackReturn() {
         let t = FakeTerminal([Self.screen("❯ "), Self.screen("❯ something else")])
-        #expect(type("hello", on: t) == "failed: Typed but not sent: the input box doesn't end with this prompt")
+        #expect(type("hello", on: t) == "failed: Typed but not sent: the input box holds more than this prompt")
         #expect(t.sent.count == 1)
     }
 

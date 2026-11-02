@@ -146,6 +146,14 @@ Second line: reply with the number of lines in this message and nothing else."
     prompt=$(grep '"type":"user"' "$(field $P transcript_path)" | tail -1 | jq -r '.message.content | if type == "string" then . else .[0].text end')
     check "tmux prompt arrived exactly" "$prompt" "$text"
 
+    # A draft taller than the box, the cursor moved up into it, clears in rounds before the prompt.
+    for i in {1..30}; do (( i > 1 )) && tx send-keys -t $pane -H 1b 0d; tx send-keys -t $pane -l "tall draft line $i"; done
+    for i in {1..8}; do tx send-keys -t $pane Up; done; sleep 0.5
+    check "tmux send over a 30-line draft confirmed" "$($BIN send $P 'Reply with the single word TALL and nothing else')" confirmed
+    wait_for 60 '[[ $(field $P status) == idle ]]'
+    prompt=$(grep '"type":"user"' "$(field $P transcript_path)" | tail -1 | jq -r '.message.content | if type == "string" then . else .[0].text end')
+    check "the 30-line draft did not merge" "$prompt" "Reply with the single word TALL and nothing else"
+
     tx send-keys -t $pane C-z; sleep 1.5
     check "tmux send refused while suspended" "$($BIN send $P 'nope' 2>&1)" "Claude isn't in the foreground (suspended?)"
     tx send-keys -t $pane fg Enter; sleep 2

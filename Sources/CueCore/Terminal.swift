@@ -18,10 +18,12 @@ package enum AppRef: Sendable {
     case bundle(String)
 }
 
-/// The bytes Claude delivery sends besides text: Ctrl+U clears to line start, ESC CR (Option+Return)
-/// breaks a line, CR submits.
+/// The bytes Claude delivery sends besides text: 60 Ctrl+K and 60 Ctrl+U clear up to 30 lines after and
+/// before the cursor (one write each: Claude Code honors a burst of one key, and dropped a mixed one), ESC CR
+/// (Option+Return) breaks a line, CR submits.
 enum Key {
-    static let clearLine: [UInt8] = [0x15]
+    static let clearAfter = [UInt8](repeating: 0x0B, count: 60)
+    static let clearBefore = [UInt8](repeating: 0x15, count: 60)
     static let lineBreak: [UInt8] = [0x1B, 0x0D]
     static let submit: [UInt8] = [0x0D]
 }
