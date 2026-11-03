@@ -28,7 +28,7 @@
 | `tests/CueCoreTests/` | swift-testing suites for CueCore, with real Claude Code screen captures |
 | `plugins/amp/cue.ts` | The Amp plugin; `drainInbox` is exported for the tests |
 | `Info.plist` | Bundle id, `LSUIElement`, the app icon, the Automation usage string |
-| `assets/` | The icon sources (`icon.svg`, `menubar.svg`), the generated `AppIcon.icns` and `menubar.tiff`, the agents' logos (`agent-*.png`), and `build.sh` |
+| `assets/` | The icon sources (`icon.svg`, `menubar.svg`), the generated `AppIcon.icns` and `menubar.tiff`, the agents' marks (`agent-*.svg` and the generated `agent-*.png`), and `build.sh` |
 | `install.sh`, `uninstall.sh` | Build, install, migration, and settings merges |
 | `tests/check.sh` | Hook state machines, delivery and the inbox, in a temp folder |
 | `tests/amp-plugin.mjs` | Drives the real Amp plugin through a fake PluginAPI, for `tests/check.sh` |
@@ -61,7 +61,7 @@ Each `./install.sh` from source re-signs the app ad hoc, and macOS asks for Auto
 
 `assets/icon.svg` is the app icon and `assets/menubar.svg` the menubar mark: two stacked session windows, a prompt in the front one, and a dot for the session waiting on you. After editing either, run `assets/build.sh` (it needs `rsvg-convert`, from `brew install librsvg`) and commit the regenerated `AppIcon.icns` and `menubar.tiff`; `install.sh` copies both into the bundle. The app draws `menubar.tiff` (1x and 2x) as a template image, so it must stay black on transparent. A build run from `.build/` has no bundle and shows the `terminal` SF Symbol instead.
 
-The rows show each agent's own logo as a 64 px PNG: `agent-codex.png` is the Codex app logo from the Codex editor extension, `agent-amp.png` is the app icon from ampcode.com, and `agent-claude.png` is rendered by `build.sh` from `agent-claude.svg`, the Claude starburst from Simple Icons in Claude's coral (`#D97757`). They are their makers' trademarks, used only to mark which agent a row belongs to; when an agent restyles its logo, replace the file and reinstall.
+The rows show each agent's mark in black and white. `build.sh` renders `agent-‹name›.svg` to a 64 px PNG, which the app draws as a template image in the label color: black in light mode, white in dark. Claude's starburst is the sidebar icon of the Claude Code editor extension, and Amp's chevrons the sidebar icon of Amp's. OpenAI's Codex extension ships only the OpenAI blossom in monochrome, so the Codex cloud comes from [Lobe Icons](https://github.com/lobehub/lobe-icons) (MIT). The marks are their makers' trademarks, used only to show which agent a row belongs to; when an agent restyles its mark, replace the SVG and run `assets/build.sh`.
 
 | Color | Hex | Use |
 | --- | --- | --- |
