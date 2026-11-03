@@ -77,16 +77,18 @@ struct RowView: View {
     }
 }
 
-/// The agent's own logo: Claude's starburst, the Codex cloud, Amp's tile. The row title names the
-/// agent, so VoiceOver skips this. A build run from .build/ has no bundle, so it draws a symbol instead.
+/// The agent's own mark in black and white: Claude's starburst, the Codex cloud, Amp's chevrons. The
+/// row title names the agent, so VoiceOver skips this. A build run from .build/ has no bundle, so it
+/// draws a symbol instead.
 struct AgentIcon: View {
     let agent: Agent
 
     var body: some View {
         Group {
             if let logo = Self.logos[agent] ?? nil {
-                Image(nsImage: logo).resizable().interpolation(.high).scaledToFit()
-                    .clipShape(RoundedRectangle(cornerRadius: agent == .amp ? 5 : 0))
+                // A template image takes the label color: black in light mode, white in dark.
+                Image(nsImage: logo).renderingMode(.template).resizable().interpolation(.high).scaledToFit()
+                    .foregroundStyle(.primary)
             } else {
                 Image(systemName: "terminal.fill")
                     .font(.system(size: 10, weight: .bold))

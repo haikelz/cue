@@ -1,5 +1,5 @@
 #!/bin/sh
-# Regenerate AppIcon.icns, menubar.tiff and agent-claude.png from the SVG sources. Needs rsvg-convert (brew install librsvg).
+# Regenerate AppIcon.icns, menubar.tiff and the agents' agent-*.png from the SVG sources. Needs rsvg-convert (brew install librsvg).
 # The generated files are committed, so installing Cue doesn't need this.
 set -eu
 cd "$(dirname "$0")"
@@ -15,7 +15,8 @@ iconutil -c icns "$tmp/AppIcon.iconset" -o AppIcon.icns
 rsvg-convert -w 18 menubar.svg -o "$tmp/menubar.png"
 rsvg-convert -w 36 menubar.svg -o "$tmp/menubar@2x.png"
 tiffutil -cathidpicheck "$tmp/menubar.png" "$tmp/menubar@2x.png" -out menubar.tiff 2> /dev/null
-# The agents' logos, 64 px for a 20 pt icon on a Retina screen. Codex's and Amp's come as PNGs from
-# their makers (the Codex editor extension, ampcode.com); Claude's starburst comes as an SVG.
-rsvg-convert -w 64 -h 64 agent-claude.svg -o agent-claude.png
+# The agents' marks in black, 64 px for a 20 pt icon on a Retina screen; the app draws them as template
+# images in the label color. Claude's and Amp's come from their editor extensions' sidebar icons; OpenAI
+# ships no monochrome Codex cloud, so Codex's comes from Lobe Icons (MIT).
+for agent in claude codex amp; do rsvg-convert -w 64 -h 64 --keep-aspect-ratio "agent-$agent.svg" -o "agent-$agent.png"; done
 rm -rf "$tmp"
