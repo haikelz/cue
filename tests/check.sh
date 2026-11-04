@@ -5,6 +5,9 @@ zmodload zsh/datetime
 cd "${0:A:h}/.."
 BIN=${BIN:-$PWD/.build/release/cue}
 export CUE_DIR=$(mktemp -d)
+# The hook reads its terminal from the environment, so start every run from none: the same in iTerm2,
+# WezTerm or kitty as on a CI runner. Each check sets the variables it needs.
+unset TMUX TMUX_PANE TERM_PROGRAM ITERM_SESSION_ID WEZTERM_PANE WEZTERM_UNIX_SOCKET KITTY_WINDOW_ID KITTY_LISTEN_ON
 trap 'rm -rf "$CUE_DIR"' EXIT
 fails=0
 ID=0a1b2c3d-0000-4000-8000-000000000001
@@ -34,7 +37,7 @@ check "tmux pane recorded" "$(field tmux_pane $P)" %7
 check "no iTerm2 tab inside tmux" "$(field iterm_session_id $P)" null
 (export TMUX=/private/tmp/tmux-501/default,4242,0 TMUX_PANE='%7;kill' ; ev Stop '"last_assistant_message":"x"' $P >/dev/null)
 check "odd tmux pane rejected" "$(field tmux_pane $P)" null
-(export ITERM_SESSION_ID=w0t1p0:TAB; unset TMUX TMUX_PANE; ev Stop '"last_assistant_message":"x"' $P >/dev/null)
+(export ITERM_SESSION_ID=w0t1p0:TAB TERM_PROGRAM=iTerm.app; unset TMUX TMUX_PANE; ev Stop '"last_assistant_message":"x"' $P >/dev/null)
 check "leaving tmux clears the pane" "$(field tmux_pane $P),$(field iterm_session_id $P)" "null,TAB"
 
 ev UserPromptSubmit '"prompt":"hi"'
