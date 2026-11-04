@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
   <defs>
     <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#2E323C"/>
-      <stop offset="1" stop-color="#121419"/>
+      <stop offset="0" stop-color="#2A2A2A"/>
+      <stop offset="1" stop-color="#0B0B0B"/>
     </linearGradient>
     <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.16"/>
@@ -12,18 +12,12 @@
     <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
       <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000" flood-opacity="0.35"/>
     </filter>
-    <filter id="glow" x="-100%" y="-100%" width="300%" height="300%">
-      <feGaussianBlur stdDeviation="1.1"/>
-    </filter>
   </defs>
   <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#body)" filter="url(#shadow)"/>
   <rect x="101.5" y="101.5" width="821" height="821" rx="183.5" fill="none" stroke="url(#rim)" stroke-width="3"/>
-  <g transform="translate(195.8 215.8) scale(25)">
-  <mask id="ib"><rect x="-2" y="-2" width="28" height="28" fill="#fff"/><circle cx="20.2" cy="7.4" r="4.7" fill="#000"/><rect x="5.3" y="7.3" width="17.9" height="14.9" rx="4.2" fill="#000"/></mask>
-  <mask id="if"><rect x="-2" y="-2" width="28" height="28" fill="#fff"/><circle cx="20.2" cy="7.4" r="4.7" fill="#000"/></mask>
-  <rect x="2" y="3.5" width="13.5" height="10.5" rx="2.6" fill="#596071" fill-opacity="1" mask="url(#ib)"/>
-  <rect x="6.5" y="8.5" width="15.5" height="12.5" rx="3" fill="#F4F1EA" mask="url(#if)"/>
-  <path d="M10.3 12.4 L13.15 14.7 L10.3 17" fill="none" stroke="#1A1D23" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="20.2" cy="7.4" r="3.1" fill="#FFB224" opacity="0.65" filter="url(#glow)"/><circle cx="20.2" cy="7.4" r="3.1" fill="#FFB224"/>
+  <!-- The mark in a 100-unit box: a prompt caret and the dot of a session waiting on you, centered at 62% of the tile. -->
+  <g transform="translate(242.5 256.5) scale(5.11)">
+    <path d="M27 28 L53 50 L27 72" fill="none" stroke="#FFFFFF" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="75" cy="30" r="10" fill="#FFFFFF"/>
   </g>
 </svg>

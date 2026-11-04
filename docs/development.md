@@ -59,16 +59,14 @@ Each `./install.sh` from source re-signs the app ad hoc, and macOS asks for Auto
 
 ## The icon
 
-`assets/icon.svg` is the app icon and `assets/menubar.svg` the menubar mark: two stacked session windows, a prompt in the front one, and a dot for the session waiting on you. After editing either, run `assets/build.sh` (it needs `rsvg-convert`, from `brew install librsvg`) and commit the regenerated `AppIcon.icns` and `menubar.tiff`; `install.sh` copies both into the bundle. The app draws `menubar.tiff` (1x and 2x) as a template image, so it must stay black on transparent. A build run from `.build/` has no bundle and shows the `terminal` SF Symbol instead.
+`assets/icon.svg` is the app icon and `assets/menubar.svg` the menubar mark: a prompt caret, where your next prompt goes, and a dot at its shoulder for the session that's ready for it. The icon draws them in white on a black rounded square; the menubar mark draws them alone. After editing either, run `assets/build.sh` (it needs `rsvg-convert`, from `brew install librsvg`) and commit the regenerated `AppIcon.icns` and `menubar.tiff`; `install.sh` copies both into the bundle. The app draws `menubar.tiff` (1x and 2x) as a template image, so it must stay black on transparent. A build run from `.build/` has no bundle and shows the `terminal` SF Symbol instead.
 
 The rows show each agent's mark in black and white. `build.sh` renders `agent-‹name›.svg` to a 64 px PNG, which the app draws as a template image in the label color: black in light mode, white in dark. Claude's starburst is the sidebar icon of the Claude Code editor extension, and Amp's chevrons the sidebar icon of Amp's. OpenAI's Codex extension ships only the OpenAI blossom in monochrome, so the Codex cloud comes from [Lobe Icons](https://github.com/lobehub/lobe-icons) (MIT). The marks are their makers' trademarks, used only to show which agent a row belongs to; when an agent restyles its mark, replace the SVG and run `assets/build.sh`.
 
 | Color | Hex | Use |
 | --- | --- | --- |
-| Ink | `#2E323C` to `#121419` | The icon's background gradient, top to bottom |
-| Slate | `#596071` | The back window |
-| Paper | `#F4F1EA` | The front window |
-| Amber | `#FFB224` | The waiting dot, with a soft glow in the app icon |
+| Ink | `#2A2A2A` to `#0B0B0B` | The icon's background gradient, top to bottom |
+| Paper | `#FFFFFF` | The caret and the dot |
 
 ## Tests
 

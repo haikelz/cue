@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/icon.svg" width="128" height="128" alt="Cue's icon: two stacked session windows on a dark rounded square, a prompt in the front one, and an amber dot for the session waiting on you">
+  <img src="assets/icon.svg" width="128" height="128" alt="Cue's icon: a white prompt caret with a dot at its shoulder on a black rounded square">
 </p>
 
 <h1 align="center">Cue</h1>
